@@ -1,0 +1,40 @@
+# Add this block to the Caddyfile that uzy-caddy-1 already uses.
+#
+# Find the Caddyfile on the host:
+#   docker inspect uzy-caddy-1 --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
+#
+# Append this block, then reload WITHOUT restarting Caddy (a restart would
+# briefly drop the existing site; a reload does not):
+#   docker exec -w /etc/caddy uzy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
+#   docker exec -w /etc/caddy uzy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+#
+# Caddy issues and renews the certificate automatically — no certbot needed.
+# Point a DNS A record for the subdomain at this VPS before reloading, or the
+# ACME challenge will fail.
+#
+# Replace downloader.example.com with your subdomain.
+
+downloader.example.com {
+	# `video_downloader_api` is the container name; 8000 is its internal port.
+	# This resolves over Caddy's Docker network, so no host port is involved.
+	reverse_proxy video_downloader_api:8000 {
+		transport http {
+			dial_timeout 30s
+
+			# Extraction runs yt-dlp (up to ~30s) and a merge job can run for
+			# minutes before the first byte of the response. Caddy's defaults
+			# would abort these mid-job.
+			response_header_timeout 900s
+			read_timeout 900s
+			write_timeout 900s
+		}
+	}
+
+	# cookies.txt uploads. Everything else is a short GET.
+	request_body {
+		max_size 10MB
+	}
+
+	# Deliberately no `encode` directive: the large responses here are mp4
+	# files, which are already compressed. Gzipping them wastes CPU for nothing.
+}

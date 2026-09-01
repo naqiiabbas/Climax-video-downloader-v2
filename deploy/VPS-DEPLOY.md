@@ -1,37 +1,50 @@
-# Deploying alongside an existing site
+# Deploying to the VPS (srv1853514)
 
-This VPS already runs another live project. The single rule that matters: **this
-service must never claim ports 80 or 443.** The web server already on the host
-keeps them, keeps its certificates, and keeps serving the existing site.
+This host already runs the **uzy** stack behind **Caddy**, and Caddy owns ports
+80/443 for everything on the box. The single rule that matters: **this service
+must never claim 80 or 443, and must never restart Caddy.**
 
-`docker-compose.yml` (the default) starts its own nginx bound to 80/443. **Do not
-use it here.** Use `docker-compose.vps.yml`, which starts only the API on a
-localhost port.
+What is already there:
+
+| Container | Ports |
+|---|---|
+| `uzy-caddy-1` | `0.0.0.0:80`, `0.0.0.0:443` — the reverse proxy for the whole host |
+| `uzy-user-admin-1` | `127.0.0.1:3000` |
+| `uzy-ai-admin-frontend-1` | `127.0.0.1:3001` |
+| `uzy-ai-admin-backend-1` | `127.0.0.1:3002` |
+| `uzy-postgres-1` | `127.0.0.1:5432` |
+| `uzy-minio-1` | `127.0.0.1:9000-9001` |
+| `uzy-prisma-studio-1` | `127.0.0.1:5555` |
+| `uzy-user-admin-studio-1` | `127.0.0.1:5556` |
+
+> **Note:** port **9000 is taken by MinIO**. The old monorepo ran this service on
+> 9000 — never reuse that here.
+
+`docker-compose.yml` (the default) starts its own nginx on 80/443. **Do not use
+it on this host.** Use `docker-compose.vps.yml`, which binds **no host ports at
+all** and instead joins Caddy's Docker network. Nothing it does can collide.
 
 ---
 
-## Step 1 — Find out what is already running
-
-Run these first and keep the output. Do not skip this.
+## Step 1 — Find Caddy's network and config
 
 ```bash
-# What owns 80/443, and which ports are taken?
-sudo ss -tlnp | grep -E ':(80|443|8000|8090|9000)\b'
+# The Docker network Caddy is on — this goes in .env as CADDY_NETWORK
+docker inspect uzy-caddy-1 \
+  --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
 
-# Existing containers and their port bindings
-docker ps --format 'table {{.Names}}\t{{.Ports}}'
-
-# Which web server is on the host?
-systemctl is-active nginx apache2 httpd caddy 2>/dev/null
+# Where the Caddyfile lives on the host
+docker inspect uzy-caddy-1 \
+  --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
 ```
 
-Two things to confirm:
+It is most likely `uzy_default`, but confirm rather than assume.
 
-1. **Which web server owns 80/443** — nginx, Apache, Caddy, or a container.
-2. **A free localhost port** for the API. `8090` is the default; pick another if
-   it is taken.
+Also confirm the container name is free:
 
-Also check no container is already named `video_downloader_api`.
+```bash
+docker ps -a --filter name=video_downloader_api
+```
 
 ## Step 2 — Configure
 
@@ -49,12 +62,14 @@ Set at minimum:
 |---|---|
 | `API_KEY` | `openssl rand -hex 48` |
 | `PUBLIC_BASE_URL` | `https://downloader.example.com` — your subdomain |
-| `HOST_PORT` | A free localhost port (default `8090`) |
+| `CADDY_NETWORK` | The network name from Step 1 |
 | `NODE_ENV` | `production` |
 
-`PUBLIC_BASE_URL` matters: without it, `file_url` in conversion responses is
-built from the proxied request host and can come back as an internal address the
-phone cannot reach.
+`PUBLIC_BASE_URL` matters more than it looks: without it, `file_url` in
+conversion responses is built from the proxied request host and can come back as
+an internal Docker address the phone cannot reach.
+
+`HOST_PORT` is unused on this host — no host port is bound.
 
 ```bash
 touch cookies.txt      # bind-mount target must exist before first start
@@ -66,108 +81,95 @@ touch cookies.txt      # bind-mount target must exist before first start
 docker compose -f docker-compose.vps.yml up -d --build
 ```
 
-Verify it is up and **only** on localhost:
+Verify it is running and that **no new host port appeared**:
 
 ```bash
-curl http://127.0.0.1:8090/api/health
-sudo ss -tlnp | grep 8090      # expect 127.0.0.1:8090, never 0.0.0.0:8090
+docker exec video_downloader_api \
+  node -e "fetch('http://127.0.0.1:8000/api/health').then(r=>r.text()).then(console.log)"
+
+sudo ss -tlnp | grep -E ':(80|443|8000|8090)\b'   # should be unchanged from before
 ```
 
-At this point the existing site is untouched — nothing has bound a public port.
+At this point the existing site is completely untouched — nothing public has
+changed.
 
-## Step 4 — Point a subdomain at it
+## Step 4 — Add the subdomain to Caddy
 
-Create a DNS A record for `downloader.example.com` → the VPS IP.
+Point a DNS A record for `downloader.example.com` at the VPS **first**, or
+Caddy's certificate request will fail.
 
-Then add the vhost for whichever server you have:
-
-- nginx → [`nginx-vhost.conf`](nginx-vhost.conf)
-- Apache → [`apache-vhost.conf`](apache-vhost.conf)
-
-**Always test the config before reloading.** A syntax error takes the existing
-site down with it:
+Append the block from [`Caddyfile.snippet`](Caddyfile.snippet) to the Caddyfile
+found in Step 1, then validate and reload:
 
 ```bash
-sudo nginx -t && sudo systemctl reload nginx
-# or
-sudo apachectl configtest && sudo systemctl reload apache2
+docker exec uzy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
+docker exec uzy-caddy-1 caddy reload  --config /etc/caddy/Caddyfile
 ```
 
-## Step 5 — TLS
+**Use `reload`, never `restart`.** A reload is graceful and does not interrupt
+the existing site; a restart drops connections. If `validate` fails, fix it
+before reloading — do not reload a config that failed validation.
 
-Use the certbot already on the box, so renewal keeps working the way it does for
-the existing site:
+Caddy issues and renews TLS automatically. There is no certbot step.
 
-```bash
-sudo certbot --nginx -d downloader.example.com
-# or
-sudo certbot --apache -d downloader.example.com
-```
-
-## Step 6 — Verify from outside
+## Step 5 — Verify from outside
 
 ```bash
 curl https://downloader.example.com/api/health
+
 curl -H "x-api-key: $API_KEY" \
   "https://downloader.example.com/api/download?url=https://www.dailymotion.com/video/xa1c774"
 ```
 
-Then confirm the **existing site still works**. That is the check that matters.
+Then open the existing uzy site and confirm it still works. **That is the check
+that matters most.**
+
+## Rollback
+
+```bash
+docker compose -f docker-compose.vps.yml down
+```
+
+Removes only this service. Then delete the block from the Caddyfile and reload.
+The existing stack is unaffected because it was never modified.
 
 ---
 
-## If the existing proxy is a container
+## Re-test the platforms here
 
-Do not bind a host port at all. Attach the API to the proxy's Docker network and
-route to it by container name:
+**Do not trust the platform results measured in development.** Those came from a
+residential IP. This VPS has a datacenter IP, and YouTube, Instagram and TikTok
+treat those far more harshly — YouTube commonly answers with "Sign in to confirm
+you're not a bot".
 
-```bash
-docker network ls          # find the existing proxy's network
-```
-
-Add to `docker-compose.vps.yml`:
-
-```yaml
-    networks: [proxy_net]
-networks:
-  proxy_net:
-    external: true
-    name: <the existing network>
-```
-
-Drop the `ports:` block entirely and point the proxy at
-`http://video_downloader_api:8000`.
-
----
-
-## Re-test the platforms after deploying
-
-**Do not assume the platform results measured in development carry over.** Those
-were taken from a residential IP. The VPS has a datacenter IP, and YouTube,
-Instagram and TikTok all treat those far more harshly — YouTube in particular
-often answers with "Sign in to confirm you're not a bot".
-
-Re-run the checks on the VPS and update `api-docs/README.md` with what you
-actually see:
+Re-run the checks against the deployed service and update
+`api-docs/README.md` with what you actually observe:
 
 ```bash
-curl -H "x-api-key: $KEY" "https://downloader.example.com/api/download?url=<youtube-url>"
-curl -H "x-api-key: $KEY" "https://downloader.example.com/api/tiktok?url=<tiktok-url>"
+KEY=<your api key>
+BASE=https://downloader.example.com
+
+curl -H "x-api-key: $KEY" "$BASE/api/download?url=<youtube-url>"
+curl -H "x-api-key: $KEY" "$BASE/api/tiktok?url=<tiktok-url>"
+curl -H "x-api-key: $KEY" "$BASE/api/download?url=<facebook-url>"
 ```
 
-If YouTube is blocked, the usual mitigations are supplying cookies from a
+If YouTube is blocked from this IP, the options are supplying cookies from a
 logged-in account or routing yt-dlp through a residential proxy. Neither is
 configured today.
 
 ## Operations
 
-**Disk.** Converted and merged files land in `./downloads` and are deleted after
-`CACHE_TTL_SECONDS` (default 1h). A merge at `best` quality can be ~230MB. Watch
-free space for the first week, and lower `DEFAULT_QUALITY` if it grows:
+**Disk.** Converted and merged files land in `./downloads`, deleted after
+`CACHE_TTL_SECONDS` (default 1h). A `best`-quality merge can be ~230MB. This box
+also hosts Postgres and MinIO, so keep an eye on free space for the first week:
 
 ```bash
+df -h /
 du -sh /opt/video-downloader-api/downloads
 ```
+
+Lower `DEFAULT_QUALITY` if it grows faster than you like.
 
 **Logs.** Capped at 3 × 10MB by the compose file.
 
@@ -182,5 +184,4 @@ docker compose -f docker-compose.vps.yml build --no-cache api
 docker compose -f docker-compose.vps.yml up -d
 ```
 
-**Rollback.** `docker compose -f docker-compose.vps.yml down` removes only this
-service. The existing site is unaffected because it was never touched.
+This rebuilds only this service and never touches Caddy or the uzy containers.

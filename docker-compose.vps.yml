@@ -1,16 +1,17 @@
-# Deployment for a VPS that ALREADY runs another site.
+# Deployment for the VPS that already runs the "uzy" stack behind Caddy.
 #
-# Unlike docker-compose.yml, this file starts no nginx and no certbot, and
-# never binds ports 80 or 443 — the web server already on the host keeps
-# ownership of those, and its existing TLS setup is untouched.
+# Caddy (uzy-caddy-1) owns ports 80/443 and terminates TLS for everything on
+# this host. This file therefore starts NO nginx, NO certbot, and binds NO host
+# ports at all — the API joins Caddy's Docker network and is reachable only as
+# `video_downloader_api:8000` from inside that network.
 #
-# The API listens on 127.0.0.1:${HOST_PORT} only, so it is unreachable from the
-# internet except through the reverse proxy you point at it.
+# Nothing here can collide with the existing stack: no host port is claimed, and
+# port 9000 (MinIO) and 3000-3002/5432/5555/5556 are untouched.
 #
 #   docker compose -f docker-compose.vps.yml up -d --build
 #
-# Pick a HOST_PORT that is free. Check first:
-#   sudo ss -tlnp | grep -E ':(8000|8090)\b'
+# CADDY_NETWORK must name the network Caddy is on. Find it with:
+#   docker inspect uzy-caddy-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}'
 
 services:
   api:
@@ -25,12 +26,20 @@ services:
     volumes:
       - ./downloads:/app/downloads
       - ./cookies.txt:/app/cookies.txt
-    ports:
-      # host:container — localhost-bound on purpose. Never change the 127.0.0.1
-      # prefix to 0.0.0.0 unless you intend to expose the API without a proxy.
-      - "127.0.0.1:${HOST_PORT:-8090}:8000"
+    networks:
+      - caddy
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+    # No `ports:` on purpose. If you ever need to reach the API from the host
+    # for debugging, prefer `docker exec` over opening a port:
+    #   docker exec video_downloader_api \
+    #     node -e "fetch('http://127.0.0.1:8000/api/health').then(r=>r.text()).then(console.log)"
+
+networks:
+  caddy:
+    external: true
+    name: ${CADDY_NETWORK:-uzy_default}
