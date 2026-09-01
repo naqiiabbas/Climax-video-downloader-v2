@@ -131,8 +131,60 @@ changed.
 
 ## Step 4 — Add the subdomain to Caddy
 
-Point a DNS A record for `downloader.example.com` at the VPS **first**, or
-Caddy's certificate request will fail.
+**No domain yet?** Use a `nip.io` hostname. `<ip>.nip.io` resolves to that IP
+with no DNS setup, and because it is a real hostname Caddy can obtain a genuine
+Let's Encrypt certificate — unlike a bare IP, which Let's Encrypt will not issue
+for. That keeps the mobile app working (Android and iOS both reject cleartext
+HTTP by default) and stops the `x-api-key` header travelling in plaintext.
+
+Everything below is scripted so there is nothing to hand-edit:
+
+```bash
+IP=$(curl -4 -s ifconfig.me)
+HOST="$IP.nip.io"
+echo "API will be at: https://$HOST"
+
+# Point the API at its own public URL, then recreate to pick up .env
+cd /opt/video-downloader-api
+sed -i "s|^PUBLIC_BASE_URL=.*|PUBLIC_BASE_URL=https://$HOST|" .env
+grep '^PUBLIC_BASE_URL=' .env
+
+# Back up the Caddyfile — it also serves the live uzy site
+sudo cp /opt/Uzy/caddy/Caddyfile /opt/Uzy/caddy/Caddyfile.bak
+
+# Append the site block with the hostname filled in
+sudo tee -a /opt/Uzy/caddy/Caddyfile > /dev/null <<EOF
+
+$HOST {
+	reverse_proxy video_downloader_api:8000 {
+		transport http {
+			dial_timeout 30s
+			response_header_timeout 900s
+			read_timeout 900s
+			write_timeout 900s
+		}
+	}
+	request_body {
+		max_size 10MB
+	}
+}
+EOF
+
+docker exec uzy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
+docker exec uzy-caddy-1 caddy reload  --config /etc/caddy/Caddyfile
+docker compose -f docker-compose.vps.yml up -d --force-recreate
+```
+
+Certificate issuance takes a few seconds on the first request. If it fails with
+a rate-limit error, `sslip.io` works the same way — swap the suffix and reload.
+
+Moving to a real domain later is a one-line change to that block plus a reload;
+Caddy issues the new certificate itself.
+
+---
+
+**If you do have a domain:** point a DNS A record for `downloader.example.com`
+at the VPS **first**, or Caddy's certificate request will fail.
 
 Back up the Caddyfile first — it also serves the live uzy site:
 
@@ -170,11 +222,17 @@ Caddy issues and renews TLS automatically. There is no certbot step.
 ## Step 5 — Verify from outside
 
 ```bash
-curl https://downloader.example.com/api/health
+IP=$(curl -4 -s ifconfig.me); BASE="https://$IP.nip.io"
+API_KEY=$(grep '^API_KEY=' /opt/video-downloader-api/.env | cut -d= -f2)
+
+curl "$BASE/api/health"
 
 curl -H "x-api-key: $API_KEY" \
-  "https://downloader.example.com/api/download?url=https://www.dailymotion.com/video/xa1c774"
+  "$BASE/api/download?url=https://www.dailymotion.com/video/xa1c774"
 ```
+
+`/api/health` returning `"status":"ok"` over **https** means the certificate was
+issued and the proxy is wired up.
 
 Then open the existing uzy site and confirm it still works. **That is the check
 that matters most.**

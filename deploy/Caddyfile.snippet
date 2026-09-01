@@ -1,39 +1,41 @@
-# Append this block to the existing Caddyfile on the VPS:
+# Block to append to the existing Caddyfile on the VPS:
 #
 #   /opt/Uzy/caddy/Caddyfile        (host path)
 #   /etc/caddy/Caddyfile            (as seen inside uzy-caddy-1)
 #
-# It is bind-mounted, so editing it on the host is immediately visible to the
-# container. BACK IT UP FIRST — this file also serves the live uzy site:
+# It is bind-mounted, so host edits are visible to the container immediately.
+# BACK IT UP FIRST — this same file serves the live uzy site.
 #
-#   sudo cp /opt/Uzy/caddy/Caddyfile /opt/Uzy/caddy/Caddyfile.bak
-#   sudo nano /opt/Uzy/caddy/Caddyfile        # append the block below
+# ---------------------------------------------------------------------------
+# HOSTNAME: <VPS_IP>.nip.io
+# ---------------------------------------------------------------------------
+# There is no domain yet, and Let's Encrypt cannot issue certificates for bare
+# IP addresses. nip.io resolves <anything>.<ip>.nip.io straight to that IP with
+# no DNS account or configuration, and because it is a real hostname Caddy can
+# obtain a genuine Let's Encrypt certificate for it.
 #
-# Then validate, and only reload if validation passes:
+# That matters beyond neatness: mobile platforms reject cleartext HTTP by
+# default (Android network security config, iOS ATS), and over plain HTTP the
+# x-api-key header would travel readable to anyone on the path.
 #
-#   docker exec uzy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
-#   docker exec uzy-caddy-1 caddy reload   --config /etc/caddy/Caddyfile
+# Replace 203.0.113.10 below with the VPS public IP (`curl -4 -s ifconfig.me`).
+# VPS-DEPLOY.md has a scripted version that substitutes it for you.
 #
-# Use `reload`, never `restart` — a reload is graceful and does not interrupt
-# the uzy site; a restart drops its connections.
-#
-# Point a DNS A record for the subdomain at this VPS BEFORE reloading, or
-# Caddy's ACME challenge will fail. Caddy then issues and renews TLS itself —
-# there is no certbot step.
-#
-# >>> Replace downloader.example.com with your actual subdomain. <<<
+# Moving to a real domain later means changing this one line and reloading —
+# Caddy issues the new certificate on its own.
+# ---------------------------------------------------------------------------
 
-downloader.example.com {
+203.0.113.10.nip.io {
 	# `video_downloader_api` is the container name and 8000 its internal port.
-	# This resolves over the uzy_default Docker network, so no host port is
-	# involved and nothing can collide with MinIO on 9000 or the uzy services.
+	# Resolved over the uzy_default Docker network, so no host port is involved
+	# and nothing can collide with MinIO on 9000 or the uzy services.
 	reverse_proxy video_downloader_api:8000 {
 		transport http {
 			dial_timeout 30s
 
-			# Extraction runs yt-dlp (up to ~30s) and a merge job can run for
+			# Extraction runs yt-dlp (a few seconds) and a merge job can run for
 			# minutes before the first response byte. Caddy's defaults would
-			# abort these mid-job.
+			# abort those mid-job.
 			response_header_timeout 900s
 			read_timeout 900s
 			write_timeout 900s
