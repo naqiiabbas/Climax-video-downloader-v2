@@ -1,7 +1,11 @@
 import path from "path";
 import dotenv from "dotenv";
 
-dotenv.config();
+// In a container the environment comes from docker, and .env is excluded from
+// the image — dotenv then logs "injected env (0) from .env", which reads like a
+// failure and is not one. Stay quiet in production; keep the output locally,
+// where a missing .env really does matter.
+dotenv.config({ quiet: process.env.NODE_ENV === "production" });
 
 const isWindows = process.platform === "win32";
 const root = process.cwd();

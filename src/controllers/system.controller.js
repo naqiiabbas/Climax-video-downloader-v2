@@ -111,8 +111,15 @@ export const Health = (_req, res) => {
   // the fact that no login-gated source can work.
   const cookies = cookieStatus();
 
-  res.json({
-    status: "ok",
+  // Without an API key every protected route returns 500, so the service is
+  // running but useless. Report 503 rather than "ok": the Docker HEALTHCHECK
+  // then marks the container unhealthy instead of showing a reassuring
+  // "healthy" next to a service that cannot answer a single real request.
+  const apiKeyConfigured = Boolean(config.apiKey);
+
+  res.status(apiKeyConfigured ? 200 : 503).json({
+    status: apiKeyConfigured ? "ok" : "degraded",
+    api_key_configured: apiKeyConfigured,
     uptime: Math.round(process.uptime()),
     cookies: cookies.usable,
     cookies_detail: cookies.reason,
