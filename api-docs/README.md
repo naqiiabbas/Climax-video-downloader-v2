@@ -13,8 +13,17 @@ Postman collection: [../docs/postman_collection.json](../docs/postman_collection
 
 | Environment | URL |
 |---|---|
+| **Production** | **`https://82.29.152.245.nip.io`** |
 | Local | `http://localhost:8000` |
-| Production | `https://<your-domain>` (set `PUBLIC_BASE_URL`) |
+
+Live since 2026-09-01. There is no domain yet, so the host is a `nip.io`
+hostname that resolves to the VPS IP — it carries a real Let's Encrypt
+certificate, so normal HTTPS applies and no cleartext exemption is needed on
+Android or iOS.
+
+When a domain is bought, this changes in two places (the Caddy site block and
+`PUBLIC_BASE_URL`) and the old URL stops working — so read it from config in
+the app rather than hardcoding it.
 
 ## Authentication
 
