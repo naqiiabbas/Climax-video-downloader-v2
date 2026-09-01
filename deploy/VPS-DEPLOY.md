@@ -26,21 +26,21 @@ all** and instead joins Caddy's Docker network. Nothing it does can collide.
 
 ---
 
-## Step 1 — Find Caddy's network and config
+## Step 1 — Known values
 
-```bash
-# The Docker network Caddy is on — this goes in .env as CADDY_NETWORK
-docker inspect uzy-caddy-1 \
-  --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}'
+Already discovered on this host (2026-09-01), no need to look them up again:
 
-# Where the Caddyfile lives on the host
-docker inspect uzy-caddy-1 \
-  --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
-```
+| Thing | Value |
+|---|---|
+| Caddy's Docker network | `uzy_default` |
+| Caddyfile on the host | `/opt/Uzy/caddy/Caddyfile` |
+| Caddyfile inside the container | `/etc/caddy/Caddyfile` (bind-mounted) |
+| Caddy container | `uzy-caddy-1` |
 
-It is most likely `uzy_default`, but confirm rather than assume.
+The Caddyfile is bind-mounted, so editing it on the host is immediately visible
+to the container — no rebuild, no copy step.
 
-Also confirm the container name is free:
+Confirm the container name is still free before starting:
 
 ```bash
 docker ps -a --filter name=video_downloader_api
@@ -62,7 +62,7 @@ Set at minimum:
 |---|---|
 | `API_KEY` | `openssl rand -hex 48` |
 | `PUBLIC_BASE_URL` | `https://downloader.example.com` — your subdomain |
-| `CADDY_NETWORK` | The network name from Step 1 |
+| `CADDY_NETWORK` | `uzy_default` (already the default) |
 | `NODE_ENV` | `production` |
 
 `PUBLIC_BASE_URL` matters more than it looks: without it, `file_url` in
@@ -98,12 +98,31 @@ changed.
 Point a DNS A record for `downloader.example.com` at the VPS **first**, or
 Caddy's certificate request will fail.
 
-Append the block from [`Caddyfile.snippet`](Caddyfile.snippet) to the Caddyfile
-found in Step 1, then validate and reload:
+Back up the Caddyfile first — it also serves the live uzy site:
+
+```bash
+sudo cp /opt/Uzy/caddy/Caddyfile /opt/Uzy/caddy/Caddyfile.bak
+```
+
+Append the block from [`Caddyfile.snippet`](Caddyfile.snippet), with your real
+subdomain substituted:
+
+```bash
+sudo nano /opt/Uzy/caddy/Caddyfile
+```
+
+Then validate, and reload **only if validation passes**:
 
 ```bash
 docker exec uzy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
 docker exec uzy-caddy-1 caddy reload  --config /etc/caddy/Caddyfile
+```
+
+If validation fails, restore the backup and try again — do not reload a config
+that failed validation:
+
+```bash
+sudo cp /opt/Uzy/caddy/Caddyfile.bak /opt/Uzy/caddy/Caddyfile
 ```
 
 **Use `reload`, never `restart`.** A reload is graceful and does not interrupt
@@ -130,7 +149,13 @@ that matters most.**
 docker compose -f docker-compose.vps.yml down
 ```
 
-Removes only this service. Then delete the block from the Caddyfile and reload.
+Removes only this service. Then restore the Caddyfile backup and reload:
+
+```bash
+sudo cp /opt/Uzy/caddy/Caddyfile.bak /opt/Uzy/caddy/Caddyfile
+docker exec uzy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+```
+
 The existing stack is unaffected because it was never modified.
 
 ---

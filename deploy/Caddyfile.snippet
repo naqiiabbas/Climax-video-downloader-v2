@@ -1,29 +1,39 @@
-# Add this block to the Caddyfile that uzy-caddy-1 already uses.
+# Append this block to the existing Caddyfile on the VPS:
 #
-# Find the Caddyfile on the host:
-#   docker inspect uzy-caddy-1 --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}'
+#   /opt/Uzy/caddy/Caddyfile        (host path)
+#   /etc/caddy/Caddyfile            (as seen inside uzy-caddy-1)
 #
-# Append this block, then reload WITHOUT restarting Caddy (a restart would
-# briefly drop the existing site; a reload does not):
-#   docker exec -w /etc/caddy uzy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
-#   docker exec -w /etc/caddy uzy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+# It is bind-mounted, so editing it on the host is immediately visible to the
+# container. BACK IT UP FIRST — this file also serves the live uzy site:
 #
-# Caddy issues and renews the certificate automatically — no certbot needed.
-# Point a DNS A record for the subdomain at this VPS before reloading, or the
-# ACME challenge will fail.
+#   sudo cp /opt/Uzy/caddy/Caddyfile /opt/Uzy/caddy/Caddyfile.bak
+#   sudo nano /opt/Uzy/caddy/Caddyfile        # append the block below
 #
-# Replace downloader.example.com with your subdomain.
+# Then validate, and only reload if validation passes:
+#
+#   docker exec uzy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
+#   docker exec uzy-caddy-1 caddy reload   --config /etc/caddy/Caddyfile
+#
+# Use `reload`, never `restart` — a reload is graceful and does not interrupt
+# the uzy site; a restart drops its connections.
+#
+# Point a DNS A record for the subdomain at this VPS BEFORE reloading, or
+# Caddy's ACME challenge will fail. Caddy then issues and renews TLS itself —
+# there is no certbot step.
+#
+# >>> Replace downloader.example.com with your actual subdomain. <<<
 
 downloader.example.com {
-	# `video_downloader_api` is the container name; 8000 is its internal port.
-	# This resolves over Caddy's Docker network, so no host port is involved.
+	# `video_downloader_api` is the container name and 8000 its internal port.
+	# This resolves over the uzy_default Docker network, so no host port is
+	# involved and nothing can collide with MinIO on 9000 or the uzy services.
 	reverse_proxy video_downloader_api:8000 {
 		transport http {
 			dial_timeout 30s
 
 			# Extraction runs yt-dlp (up to ~30s) and a merge job can run for
-			# minutes before the first byte of the response. Caddy's defaults
-			# would abort these mid-job.
+			# minutes before the first response byte. Caddy's defaults would
+			# abort these mid-job.
 			response_header_timeout 900s
 			read_timeout 900s
 			write_timeout 900s
@@ -36,5 +46,5 @@ downloader.example.com {
 	}
 
 	# Deliberately no `encode` directive: the large responses here are mp4
-	# files, which are already compressed. Gzipping them wastes CPU for nothing.
+	# files, already compressed. Gzipping them would waste CPU for nothing.
 }
