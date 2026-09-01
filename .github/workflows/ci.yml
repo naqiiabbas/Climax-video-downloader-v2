@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm install --ignore-scripts
+
+      - name: Check every module parses
+        run: |
+          for f in index.js src/**/*.js scripts/*.js; do
+            node --check "$f" || exit 1
+          done
+        shell: bash
+
+      - name: Boot the server and probe /api/health
+        env:
+          API_KEY: ci-test-key
+          PORT: 8000
+        run: |
+          node index.js &
+          pid=$!
+          for i in $(seq 1 20); do
+            if curl -sf http://127.0.0.1:8000/api/health; then ok=1; break; fi
+            sleep 1
+          done
+          kill $pid
+          test "$ok" = "1"
+        shell: bash
+
+      - name: Build the image
+        run: docker build -t video-downloader-api:ci .

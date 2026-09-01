@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+downloads
+ffmpeg
+yt-dlp.exe
+README.md
+docs
+.github
+.vscode

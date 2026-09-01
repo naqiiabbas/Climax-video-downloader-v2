@@ -1,0 +1,22 @@
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Runtime output
+downloads/
+*.log
+npm-debug.log*
+
+# Session cookies — never commit
+cookies.txt
+
+# Local Windows binaries (Docker installs the Linux versions)
+yt-dlp.exe
+yt-dlp
+ffmpeg/
+
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
