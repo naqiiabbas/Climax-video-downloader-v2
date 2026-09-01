@@ -34,6 +34,14 @@ export const config = {
     process.env.FFMPEG_PATH ||
     (isWindows ? path.resolve(root, "ffmpeg/bin/ffmpeg.exe") : "/usr/bin/ffmpeg"),
 
+  // Default height cap for /api/downloads/prepare. "best" is allowed but a
+  // 2160p YouTube merge is ~230MB of VPS disk and bandwidth per request.
+  defaultQuality: process.env.DEFAULT_QUALITY || "1080",
+
+  // Hard ceiling on a merge job. A long video at high quality can run for
+  // minutes; past this the request is killed and returns 504.
+  mergeTimeoutMs: Number(process.env.MERGE_TIMEOUT_MS) || 600_000,
+
   // Routes TikTok extraction through the mobile API host, which works when
   // the web extractor breaks. Set empty to always use yt-dlp's default.
   tiktokApiHostname:

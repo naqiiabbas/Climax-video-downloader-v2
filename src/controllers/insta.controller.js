@@ -18,9 +18,9 @@ function runYtDlp(url) {
       authArgs = `--username ${JSON.stringify(username)} --password ${JSON.stringify(password)} `;
     }
 
+    // No --format selector — see the note in AllMedia.controller.js.
     const command =
-      `"${ytdlp}" -j --no-warnings ${authArgs}` +
-      `--format "best[ext=mp4]/best[ext=webm]/best" ${JSON.stringify(url)}`;
+      `"${ytdlp}" -j --no-warnings ${authArgs}${JSON.stringify(url)}`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 50 }, (error, stdout, stderr) => {
       if (error) return reject(stderr || error.message);

@@ -13,9 +13,12 @@ function runYtDlp(url) {
       ? `--cookies ${JSON.stringify(config.cookiesPath)} `
       : "";
 
+    // No --format selector: -j dumps every format regardless, and the selector
+    // makes yt-dlp abort with "Requested format is not available" on sources
+    // that only publish adaptive streams (YouTube, notably). buildMediaList
+    // does the picking instead.
     const command =
-      `"${ytdlp}" -j --no-warnings ${cookieArg}` +
-      `--format "best[ext=mp4]/best[ext=webm]/best" ${JSON.stringify(url)}`;
+      `"${ytdlp}" -j --no-warnings ${cookieArg}${JSON.stringify(url)}`;
 
     exec(command, { maxBuffer: 1024 * 1024 * 50 }, (error, stdout, stderr) => {
       if (error) return reject(stderr || error.message);

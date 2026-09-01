@@ -176,6 +176,14 @@ export function buildMediaList(info, options = {}) {
 
 /** The envelope every extraction endpoint returns. */
 export function buildResponse(info, options) {
+  const media = buildMediaList(info, options);
+
+  // True when no single entry carries both tracks — YouTube publishes adaptive
+  // streams only, so every entry is silent or picture-less on its own and the
+  // client must call /api/downloads/prepare instead of downloading directly.
+  const needsMerge =
+    media.length > 0 && !media.some((m) => m.has_video && m.has_audio);
+
   return {
     url: info.webpage_url || null,
     source: info.extractor_key || null,
@@ -183,6 +191,7 @@ export function buildResponse(info, options) {
     title: info.title || null,
     thumbnail: info.thumbnail || null,
     duration: info.duration || null,
-    media: buildMediaList(info, options),
+    needs_merge: needsMerge,
+    media,
   };
 }

@@ -1,0 +1,36 @@
+# Deployment for a VPS that ALREADY runs another site.
+#
+# Unlike docker-compose.yml, this file starts no nginx and no certbot, and
+# never binds ports 80 or 443 — the web server already on the host keeps
+# ownership of those, and its existing TLS setup is untouched.
+#
+# The API listens on 127.0.0.1:${HOST_PORT} only, so it is unreachable from the
+# internet except through the reverse proxy you point at it.
+#
+#   docker compose -f docker-compose.vps.yml up -d --build
+#
+# Pick a HOST_PORT that is free. Check first:
+#   sudo ss -tlnp | grep -E ':(8000|8090)\b'
+
+services:
+  api:
+    build: .
+    image: video-downloader-api
+    container_name: video_downloader_api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 8000
+      NODE_ENV: production
+    volumes:
+      - ./downloads:/app/downloads
+      - ./cookies.txt:/app/cookies.txt
+    ports:
+      # host:container — localhost-bound on purpose. Never change the 127.0.0.1
+      # prefix to 0.0.0.0 unless you intend to expose the API without a proxy.
+      - "127.0.0.1:${HOST_PORT:-8090}:8000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -114,6 +114,37 @@ Other notes:
 | 400 | `{"error":"Missing URL"}` |
 | 500 | `{"error":"yt-dlp execution failed","details":"..."}` |
 
+## Download and merge (adaptive sources)
+
+| Method | Path |
+|---|---|
+| GET | `/api/downloads/prepare?url=<page_url>&quality=<h>` |
+
+Use this whenever the extraction response carries `needs_merge: true` — it means
+no single entry has both video and audio, so nothing in `media[]` is usable on
+its own. YouTube is the common case.
+
+Pass the **original page URL**, not a resolved CDN link: those expire within
+minutes and several sources require the original headers and cookies.
+
+`quality` accepts `best`, `2160`, `1440`, `1080`, `720`, `480`, `360`, `240`
+and defaults to `DEFAULT_QUALITY`. The server picks h264 + aac where available
+so the result plays on any mobile client without re-encoding.
+
+```json
+{
+  "success": true,
+  "file_url": "https://your-domain/downloads/video_1788268008660.mp4",
+  "key": "video_1788268008660.mp4",
+  "size_bytes": 11903239,
+  "quality": "360",
+  "expires_in": 3600
+}
+```
+
+Returns `504` if the job exceeds `MERGE_TIMEOUT_MS` (default 10 min). Higher
+qualities cost real disk and bandwidth — a `best` YouTube merge is ~230 MB.
+
 ## HLS conversion
 
 | Method | Path |

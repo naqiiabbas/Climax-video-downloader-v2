@@ -31,7 +31,7 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 
 ## Status summary
 
-**9 of 10 working.** Instagram is the only one down.
+**11 of 12 working.** Instagram is the only one down.
 
 | # | Method | Endpoint | Status | Notes |
 |---|---|---|---|---|
@@ -43,11 +43,32 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 | 6 | GET | `/api/vimeo` | ⚠️ Working, conversion required | HLS only |
 | 7 | GET | `/api/dailymotion` | ⚠️ Working, conversion required | HLS only. Also handles Pinterest |
 | 8 | GET | `/api/downloads/mp4` | ✅ Working | HLS → MP4 |
-| 9 | GET | `/downloads/<file>` | ✅ Working | Serves converted files, no key |
-| 10 | GET | `/api/delete-video` | ✅ Working | |
-| 11 | POST | `/api/update-cookies` | ✅ Working | Admin only |
+| 9 | GET | `/api/downloads/prepare` | ✅ Working | Download + merge video/audio → MP4 |
+| 10 | GET | `/downloads/<file>` | ✅ Working | Serves converted files, no key |
+| 11 | GET | `/api/delete-video` | ✅ Working | |
+| 12 | POST | `/api/update-cookies` | ✅ Working | Admin only |
 
 ---
+
+## Platform coverage
+
+> ⚠️ **Measured from a residential IP.** The VPS has a datacenter IP, which
+> YouTube, Instagram and TikTok treat far more harshly — YouTube commonly
+> answers those with "Sign in to confirm you're not a bot". **Re-run these
+> checks after deploying and update this table with what the server sees.**
+
+| Platform | Endpoint | Status |
+|---|---|---|
+| Facebook | `/api/download` | ✅ 5 formats, 2 directly downloadable |
+| TikTok | `/api/tiktok` | ✅ 4 formats, 3 downloadable (5–20s) |
+| Vimeo | `/api/vimeo` | ✅ 8 qualities — conversion required |
+| Dailymotion | `/api/dailymotion` | ✅ 4 qualities — conversion required |
+| YouTube | `/api/download` → `/api/downloads/prepare` | ✅ Adaptive only, so `needs_merge: true` — merge verified working |
+| Instagram | `/api/instagram` | ❌ Needs a cookies.txt upload |
+| Pinterest, Reddit, X, Twitch | `/api/download` | ❓ Untested — sample URLs were dead links |
+
+Anything else yt-dlp supports should work through `/api/download`, but only the
+rows above have actually been exercised.
 
 ## Extraction endpoints
 
@@ -91,6 +112,24 @@ Entries report `extension: "mp4"` but the URL is an HLS playlist. A plain GET re
 
 ## Download and file endpoints
 
+### 8b. `GET /api/downloads/prepare?url=<page_url>&quality=<h>` ✅
+
+Downloads a page URL and returns **one finished MP4 with both video and audio**.
+Use this whenever the extraction response has `needs_merge: true`.
+
+**Verified:** YouTube at `quality=360` → `200` in 7.0s, 11.9 MB, probed as
+`h264 640x360` + `aac 2ch` in an MP4 container.
+
+Takes the **original page URL**, not a resolved CDN link — those expire in
+minutes and several sources need the original headers and cookies.
+
+`quality`: `best`, `2160`, `1440`, `1080`, `720`, `480`, `360`, `240`
+(default `DEFAULT_QUALITY`, currently `1080`). Higher costs real VPS disk and
+bandwidth — a `best` YouTube merge is ~230 MB. Times out at
+`MERGE_TIMEOUT_MS` (10 min) with a `504`.
+
+Returns `{success, file_url, key, size_bytes, quality, expires_in}`.
+
 ### 8. `GET /api/downloads/mp4?url=<m3u8>` ✅
 
 Remuxes an HLS stream to MP4. **Verified:** `200`, produced an 18.32 MB valid MP4 (`ftyp` container).
@@ -124,10 +163,17 @@ Admin operation — should not be exposed in the mobile app.
 | `needs_conversion: true` | URL is a **playlist, not a file** — a plain GET saves a few KB of text |
 
 ```js
+if (res.needs_merge) {
+  // YouTube: no entry has both tracks. Let the server download and merge.
+  return `/api/downloads/prepare?url=${encodeURIComponent(pageUrl)}&quality=720`;
+}
 const direct = media.find(m => m.has_video && m.has_audio && !m.needs_conversion);
 const convert = media.find(m => m.has_video && m.has_audio && m.needs_conversion);
 // use `direct` if present; otherwise send convert.url to /api/downloads/mp4
 ```
+
+The top-level **`needs_merge: true`** means no single entry carries both video
+and audio, so `/api/downloads/prepare` is the only way to get a usable file.
 
 **Vimeo and Dailymotion have no direct option at all** — conversion is the only path.
 
@@ -145,6 +191,8 @@ const convert = media.find(m => m.has_video && m.has_audio && m.needs_conversion
 |---|---|
 | Instagram needs manual cookie upload | Endpoint 5 down until cookies are supplied; recurs on expiry |
 | TikTok reliability depends on retries | ~40% single-attempt success; retries cover it but cost latency |
-| Conversion is synchronous | A large file holds the request ~48s; no progress reporting |
+| Conversion and merge are synchronous | A large file holds the request open for a minute or more; no progress reporting. `/api/downloads/prepare` at `best` can run for minutes |
 | No rate limiting | Any holder of the API key can drive unlimited ffmpeg jobs |
-| Docker image unverified | Built config is untested — Docker was not running on the dev machine |
+| Docker image unverified | Never built — Docker was not running on the dev machine |
+| Datacenter IP untested | All platform results above come from a residential IP |
+| Merged files consume VPS disk | ~230 MB per `best`-quality YouTube merge, held for `CACHE_TTL_SECONDS` |
