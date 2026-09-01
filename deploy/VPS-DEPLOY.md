@@ -53,8 +53,22 @@ git clone <your-repo> /opt/video-downloader-api
 cd /opt/video-downloader-api
 
 cp .env.example .env
-nano .env
+
+# Generate and set the API key in one step. Editing by hand is easy to get
+# wrong: an unset API_KEY leaves the service running but returning 500 on
+# every protected route.
+API_KEY=$(openssl rand -hex 48)
+sed -i "s|^API_KEY=.*|API_KEY=$API_KEY|" .env
+echo "Save this for the mobile app: $API_KEY"
+
+# Your subdomain, used to build download URLs.
+sed -i "s|^PUBLIC_BASE_URL=.*|PUBLIC_BASE_URL=https://downloader.example.com|" .env
+
+grep -E '^(API_KEY|PUBLIC_BASE_URL)=' .env    # confirm both are non-empty
 ```
+
+Do not wrap values in quotes — `API_KEY="abc"` passes the quotes through as
+part of the value.
 
 Set at minimum:
 
@@ -91,6 +105,17 @@ login-gated sources need one.
 ```bash
 docker compose -f docker-compose.vps.yml up -d --build
 ```
+
+`.env` is read at container **creation**, not on restart. After any change to
+it, recreate rather than restart, then confirm the value actually landed:
+
+```bash
+docker compose -f docker-compose.vps.yml up -d --force-recreate
+docker exec video_downloader_api sh -c 'echo "API_KEY len=${#API_KEY}"'   # expect 96
+```
+
+`/api/health` returns **503 `"degraded"`** while `API_KEY` is empty, and the
+container shows as unhealthy — that is the signal that this step was missed.
 
 Verify it is running and that **no new host port appeared**:
 
