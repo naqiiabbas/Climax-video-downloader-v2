@@ -174,15 +174,30 @@ export function buildMediaList(info, options = {}) {
     .map((v) => v.entry);
 }
 
+/**
+ * True when no single entry carries both tracks, so nothing in media[] is
+ * usable on its own and the client must call /api/downloads/prepare.
+ *
+ * YouTube is the obvious case (adaptive only), but Vimeo hits it too: its
+ * entries are video-only HLS renditions plus a separate audio track. Running
+ * one of those through /api/downloads/mp4 yields a SILENT video, so this flag
+ * is what steers the client to the merging endpoint instead.
+ *
+ * Exported because Vimeo builds its own response shape and must apply the same
+ * rule — it drifted out of sync once already and shipped `undefined`.
+ */
+export function computeNeedsMerge(media) {
+  return (
+    Array.isArray(media) &&
+    media.length > 0 &&
+    !media.some((m) => m.has_video && m.has_audio)
+  );
+}
+
 /** The envelope every extraction endpoint returns. */
 export function buildResponse(info, options) {
   const media = buildMediaList(info, options);
-
-  // True when no single entry carries both tracks — YouTube publishes adaptive
-  // streams only, so every entry is silent or picture-less on its own and the
-  // client must call /api/downloads/prepare instead of downloading directly.
-  const needsMerge =
-    media.length > 0 && !media.some((m) => m.has_video && m.has_audio);
+  const needsMerge = computeNeedsMerge(media);
 
   return {
     url: info.webpage_url || null,

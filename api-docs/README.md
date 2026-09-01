@@ -52,20 +52,30 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 
 ## Platform coverage
 
-> ⚠️ **Measured from a residential IP.** The VPS has a datacenter IP, which
-> YouTube, Instagram and TikTok treat far more harshly — YouTube commonly
-> answers those with "Sign in to confirm you're not a bot". **Re-run these
-> checks after deploying and update this table with what the server sees.**
+**Measured on the production VPS (datacenter IP), 2026-09-01.** The datacenter
+IP turned out not to hurt — nothing was bot-blocked, and TikTok was markedly
+*faster* there than in local testing.
 
-| Platform | Endpoint | Status |
-|---|---|---|
-| Facebook | `/api/download` | ✅ 5 formats, 2 directly downloadable |
-| TikTok | `/api/tiktok` | ✅ 4 formats, 3 downloadable (5–20s) |
-| Vimeo | `/api/vimeo` | ✅ 8 qualities — conversion required |
-| Dailymotion | `/api/dailymotion` | ✅ 4 qualities — conversion required |
-| YouTube | `/api/download` → `/api/downloads/prepare` | ✅ Adaptive only, so `needs_merge: true` — merge verified working |
-| Instagram | `/api/instagram` | ❌ Needs a cookies.txt upload |
-| Pinterest, Reddit, X, Twitch | `/api/download` | ❓ Untested — sample URLs were dead links |
+| Platform | Endpoint | Status | Client path |
+|---|---|---|---|
+| YouTube | `/api/download` | ✅ 2.9s, 14 formats | `needs_merge` → **prepare** |
+| Facebook | `/api/download` | ✅ 2.9s, 5 formats | 2 direct downloads |
+| TikTok | `/api/tiktok` | ✅ 2.3s, 4 formats | 3 direct downloads |
+| Vimeo | `/api/vimeo` | ✅ 4.0s, 8 qualities | `needs_merge` → **prepare** |
+| Dailymotion | `/api/dailymotion` | ✅ 2.6s, 4 qualities | `needs_conversion` → **mp4** |
+| Instagram | `/api/instagram` | ❌ Needs a cookies.txt upload | — |
+| Pinterest, Reddit, X, Twitch | `/api/download` | ❓ Untested — sample URLs were dead links | — |
+
+`/api/downloads/prepare` verified on the VPS: YouTube at 360p returned an
+11.9 MB MP4.
+
+> **Vimeo needs merging, not conversion.** Its 8 entries are video-only HLS
+> renditions plus a separate audio track — zero carry both. Sending one to
+> `/api/downloads/mp4` produces a **silent video**. Follow `needs_merge` first,
+> before `needs_conversion`.
+
+Anything else yt-dlp supports should work through `/api/download`, but only the
+rows above have actually been exercised.
 
 Anything else yt-dlp supports should work through `/api/download`, but only the
 rows above have actually been exercised.

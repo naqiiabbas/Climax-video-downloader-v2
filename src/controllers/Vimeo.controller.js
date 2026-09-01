@@ -4,6 +4,7 @@ import util from "util";
 
 const execFileP = util.promisify(execFile);
 import { config } from "../config.js";
+import { computeNeedsMerge } from "../utils/media.js";
 
 const ytdlp = config.ytdlpPath;
 const USER_AGENT =
@@ -373,6 +374,11 @@ export const FetchVimeo = async (req, res) => {
       thumbnail: meta.thumbnail || null,
       title: meta.title || null,
       duration: meta.duration || null,
+      // Same rule as every other extractor. Vimeo returns video-only HLS
+      // renditions plus a separate audio track, so this is normally true and
+      // steers the client to /api/downloads/prepare rather than the HLS remux,
+      // which would hand back a silent video.
+      needs_merge: computeNeedsMerge(finalMedia),
       media: finalMedia,
       format_preference: mp4Media.length > 0 ? 'mp4_only' : 'all_formats',
       ...(finalMedia.length === 0 ? {
