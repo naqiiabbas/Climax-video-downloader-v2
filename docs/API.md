@@ -7,10 +7,12 @@ in a JSON body. The value is URL-decoded server-side.
 
 ## Authentication
 
-Every endpoint except `GET /` and `GET /api/health` requires a header:
+Every endpoint except `GET /` and `GET /api/health` requires a header. Either
+form works:
 
 ```
 x-api-key: <API_KEY from .env>
+Authorization: Bearer <API_KEY from .env>
 ```
 
 | Response | Meaning |
@@ -56,20 +58,54 @@ x-api-key: <key>
       "quality": "720p",
       "extension": "mp4",
       "type": "video",
+      "has_video": true,
+      "has_audio": true,
+      "protocol": "https",
+      "needs_conversion": false,
       "size_bytes": 2411724,
-      "size": "2.30 MB"
+      "size": "2.30 MB",
+      "size_is_estimate": false
     }
   ]
 }
 ```
 
-`media[].type` is `"video"` or `"audio"`. One entry per quality; mp4 wins over
-webm at the same quality. HLS/m3u8 formats are filtered out — use
-`/api/downloads/mp4` for those.
+### Picking an entry — read this before implementing the client
 
-**TikTok only** additionally returns `media[].headers` and `media[].cookies`.
-The client **must** replay those headers on the download request or the CDN
-returns 403.
+`media[]` is sorted best-first, but **do not blindly take index 0**. Three
+fields decide whether an entry is usable:
+
+| Field | Meaning |
+|---|---|
+| `has_audio` | `false` means a silent, video-only adaptive track. Facebook and Vimeo both return these. Saving one gives the user a video with no sound. |
+| `has_video` | `false` means an audio-only track. |
+| `needs_conversion` | `true` means `url` is an **HLS playlist, not a file**. A plain GET downloads a few KB of text. Send it to `/api/downloads/mp4` first. |
+| `protocol` | `"https"` (direct file) or `"m3u8"` (playlist). Mirrors `needs_conversion`. |
+
+The straightforward client rule:
+
+```js
+const direct = media.find(m => m.has_video && m.has_audio && !m.needs_conversion);
+const viaConversion = media.find(m => m.has_video && m.has_audio && m.needs_conversion);
+// prefer `direct`; otherwise POST viaConversion.url to /api/downloads/mp4
+```
+
+Some sources offer no direct option at all — Dailymotion and Vimeo are HLS-only,
+so conversion is the **only** path there.
+
+Other notes:
+
+- `type` (`"video"`/`"audio"`) is retained for backwards compatibility;
+  `has_video`/`has_audio` are more precise since an adaptive video track is
+  still `type: "video"`.
+- One entry per quality bucket, keyed by resolution. Progressive streams
+  (audio+video muxed) outrank video-only ones, mp4 outranks webm, higher
+  bitrate breaks ties.
+- `size_is_estimate: true` means the size was computed from bitrate × duration
+  because the source did not report one. Treat it as approximate.
+- **TikTok only** also returns `media[].headers` and `media[].cookies`. The
+  client **must** replay those headers on the download request or the CDN
+  returns 403.
 
 ### Errors
 
@@ -114,6 +150,11 @@ deleted automatically when the TTL expires.
 - **Extracted URLs are short-lived.** TikTok and Instagram links expire within
   minutes. Resolve immediately before downloading; do not cache them.
 - **Extraction is slow.** yt-dlp can take 5–30s. Use a 60s client timeout;
-  Nginx allows 300s.
+  Nginx allows 300s. TikTok is the slowest because the server retries
+  internally against rate limiting (measured 5–20s).
+- **TikTok fails intermittently by design of their anti-bot.** A single
+  anonymous attempt succeeds ~40% of the time, so the server retries up to
+  `TIKTOK_RETRIES` (default 8) times, which measured 6/6 successes. Uploading a
+  cookies.txt improves this further. A 500 here is worth one client-side retry.
 - **Pick a format client-side** from the `media` array rather than assuming
   index 0 — availability varies per source.

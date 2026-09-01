@@ -9,7 +9,10 @@ import { config } from "../config.js";
  * casual abuse of the yt-dlp workers, it is not user authentication.
  */
 export const verifyStrongKey = (req, res, next) => {
-  const apiKey = req.header("x-api-key");
+  // Accept `Authorization: Bearer <key>` as well — existing Postman
+  // collections and HTTP clients default to bearer auth.
+  const bearer = /^Bearer\s+(.+)$/i.exec(req.header("authorization") || "");
+  const apiKey = req.header("x-api-key") || (bearer ? bearer[1].trim() : "");
 
   if (!config.apiKey) {
     console.error("API_KEY is not set — refusing every request.");

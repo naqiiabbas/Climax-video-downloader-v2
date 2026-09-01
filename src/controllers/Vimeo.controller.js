@@ -327,6 +327,7 @@ export const FetchVimeo = async (req, res) => {
 
       const vcodec = chosen.vcodec || "";
       const type = (typeof vcodec === "string" && vcodec.includes("none")) ? "audio" : "video";
+      const hls = isHlsFormat(chosen, chosen.url);
 
       media.push({
         url: chosen.url,
@@ -336,8 +337,15 @@ export const FetchVimeo = async (req, res) => {
           ? "m3u8"
           : (chosen.ext || null),
         type,
+        has_video: type === "video",
+        has_audio: chosen.acodec !== "none",
+        // Same contract as the other extractors: "m3u8" must be run through
+        // /api/downloads/mp4 before the client can save it.
+        protocol: hls ? "m3u8" : "https",
+        needs_conversion: hls,
         size_bytes: sizeBytes ? Math.round(sizeBytes) : null,
         size: humanSize(sizeBytes),
+        size_is_estimate: !(chosen.filesize || chosen.filesize_approx),
       });
     }
 

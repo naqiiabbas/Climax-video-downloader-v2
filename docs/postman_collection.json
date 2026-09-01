@@ -1,0 +1,185 @@
+{
+  "info": {
+    "name": "Video Downloader API",
+    "description": "Standalone yt-dlp extraction API.\n\nSet the `BaseUrl` and `ApiKey` collection variables before running anything.\n\nAuth is inherited from the collection and sent as `x-api-key`. `Authorization: Bearer <key>` is accepted too.\n\nEvery extraction endpoint returns a `media[]` array. Check `needs_conversion` on the entry you pick: when it is `true` the URL is an HLS playlist, not a file — pass it to `Downloads / HLS to MP4` and download the `file_url` that comes back.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "x-api-key", "type": "string" },
+      { "key": "value", "value": "{{ApiKey}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/health",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "health"]
+        },
+        "description": "Open probe. No API key required."
+      },
+      "response": []
+    },
+    {
+      "name": "All media (universal)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/download?url=https://www.facebook.com/reel/2397894710684126",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "download"],
+          "query": [
+            {
+              "key": "url",
+              "value": "https://www.facebook.com/reel/2397894710684126"
+            }
+          ]
+        },
+        "description": "Any yt-dlp-supported site: Facebook, YouTube, Twitter/X, Reddit and so on. Login-gated sources need a cookies.txt uploaded first."
+      },
+      "response": []
+    },
+    {
+      "name": "TikTok",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/tiktok?url=https://www.tiktok.com/@animevibestudi0/video/7612666558460087559",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "tiktok"],
+          "query": [
+            {
+              "key": "url",
+              "value": "https://www.tiktok.com/@animevibestudi0/video/7612666558460087559"
+            }
+          ]
+        },
+        "description": "TikTok rate-limits anonymous extraction, so the server retries internally up to TIKTOK_RETRIES times. Expect 5-20s. Each media entry carries `headers` and `cookies` that the client MUST replay on the download request, or the CDN returns 403."
+      },
+      "response": []
+    },
+    {
+      "name": "Instagram",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/instagram?url=https://www.instagram.com/reel/REEL_ID/",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "instagram"],
+          "query": [
+            { "key": "url", "value": "https://www.instagram.com/reel/REEL_ID/" }
+          ]
+        },
+        "description": "Requires a valid cookies.txt on the server (see Update cookies)."
+      },
+      "response": []
+    },
+    {
+      "name": "Vimeo",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/vimeo?url=https://vimeo.com/1160592223",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "vimeo"],
+          "query": [{ "key": "url", "value": "https://vimeo.com/1160592223" }]
+        },
+        "description": "Vimeo serves adaptive streams: entries normally come back with needs_conversion=true."
+      },
+      "response": []
+    },
+    {
+      "name": "Dailymotion / Pinterest",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/dailymotion?url=https://www.dailymotion.com/video/xa1c774",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "dailymotion"],
+          "query": [
+            {
+              "key": "url",
+              "value": "https://www.dailymotion.com/video/xa1c774"
+            }
+          ]
+        },
+        "description": "Dailymotion is HLS-only, so every entry has needs_conversion=true despite extension mp4."
+      },
+      "response": []
+    },
+    {
+      "name": "Downloads / HLS to MP4",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/downloads/mp4?url={{HlsUrl}}",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "downloads", "mp4"],
+          "query": [{ "key": "url", "value": "{{HlsUrl}}" }]
+        },
+        "description": "Takes an m3u8 URL from a media entry with needs_conversion=true, remuxes it to mp4 and returns { file_url, key, expires_in }. Fetch file_url directly — it needs no API key and is deleted when the TTL expires."
+      },
+      "response": []
+    },
+    {
+      "name": "Delete video",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/delete-video?url={{FileUrl}}",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "delete-video"],
+          "query": [{ "key": "url", "value": "{{FileUrl}}" }]
+        },
+        "description": "Removes a converted file ahead of its TTL."
+      },
+      "response": []
+    },
+    {
+      "name": "Update cookies",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "Netscape-format cookies.txt exported from a logged-in browser. Max 5MB."
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{BaseUrl}}/api/update-cookies",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "update-cookies"]
+        },
+        "description": "Replaces the server's cookies.txt, used for Instagram and other login-gated sources."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    { "key": "BaseUrl", "value": "http://localhost:8000", "type": "default" },
+    { "key": "ApiKey", "value": "", "type": "default" },
+    { "key": "HlsUrl", "value": "", "type": "default" },
+    { "key": "FileUrl", "value": "", "type": "default" }
+  ]
+}

@@ -34,6 +34,15 @@ export const config = {
     process.env.FFMPEG_PATH ||
     (isWindows ? path.resolve(root, "ffmpeg/bin/ffmpeg.exe") : "/usr/bin/ffmpeg"),
 
+  // Routes TikTok extraction through the mobile API host, which works when
+  // the web extractor breaks. Set empty to always use yt-dlp's default.
+  tiktokApiHostname:
+    process.env.TIKTOK_API_HOSTNAME ?? "api22-normal-c-useast2a.tiktokv.com",
+
+  // TikTok rate-limits anonymous extraction; a single attempt succeeds only
+  // ~40% of the time, so retry before giving up.
+  tiktokRetries: Number(process.env.TIKTOK_RETRIES) || 8,
+
   instagram: {
     username: process.env.IG_USERNAME || "",
     password: process.env.IG_PASSWORD || "",
