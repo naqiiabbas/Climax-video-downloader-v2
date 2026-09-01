@@ -72,7 +72,13 @@ an internal Docker address the phone cannot reach.
 `HOST_PORT` is unused on this host — no host port is bound.
 
 ```bash
-touch cookies.txt      # bind-mount target must exist before first start
+mkdir -p downloads
+touch cookies.txt      # bind-mount targets must exist before first start
+
+# The container runs as the unprivileged `node` user (uid 1000), but these are
+# created by root on the host. Bind mounts overlay the image's own permissions,
+# so without this the API cannot write converted files or update cookies.txt.
+sudo chown -R 1000:1000 downloads cookies.txt
 ```
 
 This leaves an **empty** cookies.txt, which is expected and fine. `/api/health`

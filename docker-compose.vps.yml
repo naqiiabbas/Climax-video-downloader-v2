@@ -24,6 +24,10 @@ services:
       PORT: 8000
       NODE_ENV: production
     volumes:
+      # The image runs as the `node` user (uid 1000). Bind mounts keep the
+      # HOST's ownership, overriding the image's chown, so both of these must
+      # be owned by 1000:1000 on the host or the API cannot write to them:
+      #   sudo chown -R 1000:1000 downloads cookies.txt
       - ./downloads:/app/downloads
       - ./cookies.txt:/app/cookies.txt
     networks:
