@@ -170,8 +170,13 @@ deleted automatically when the TTL expires.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/health` | **Open.** `{status, uptime, cookies, cachedVideos, timestamp}` |
+| GET | `/api/health` | **Open.** `{status, uptime, cookies, cookies_detail, cachedVideos, timestamp}` |
 | POST | `/api/update-cookies` | Multipart, field `file`. Max 5 MB, `.txt` + `text/plain`, must be Netscape format |
+
+`cookies` is `true` only when the jar is actually **usable**. `cookies_detail`
+says why not: `ok`, `missing`, `empty`, `no-entries`, `not-netscape-format`.
+Deployment creates an empty `cookies.txt` for the docker bind mount, so `empty`
+is the normal starting state and only affects login-gated sources.
 | GET | `/api/delete-video?url=<file_url>` | Deletes a converted file before its TTL |
 | GET | `/downloads/<filename>` | Static serving of converted files |
 | GET | `/` | `{"service":"video-downloader-api","status":"running"}` |

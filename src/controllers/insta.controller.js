@@ -1,7 +1,7 @@
 import { exec } from "child_process";
-import fs from "fs";
 import { config } from "../config.js";
 import { buildResponse } from "../utils/media.js";
+import { hasUsableCookies, cookieArgString } from "../utils/cookies.js";
 
 const ytdlp = config.ytdlpPath;
 
@@ -9,11 +9,11 @@ function runYtDlp(url) {
   return new Promise((resolve, reject) => {
     const { username, password } = config.instagram;
 
-    // Prefer cookies.txt when it exists; fall back to credentials only if both
-    // are configured. Instagram rate-limits password logins aggressively.
+    // Prefer a usable cookies.txt; fall back to credentials only if both are
+    // configured. Instagram rate-limits password logins aggressively.
     let authArgs = "";
-    if (fs.existsSync(config.cookiesPath)) {
-      authArgs = `--cookies ${JSON.stringify(config.cookiesPath)} `;
+    if (hasUsableCookies()) {
+      authArgs = cookieArgString();
     } else if (username && password) {
       authArgs = `--username ${JSON.stringify(username)} --password ${JSON.stringify(password)} `;
     }

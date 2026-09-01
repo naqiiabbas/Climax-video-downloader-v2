@@ -75,6 +75,11 @@ an internal Docker address the phone cannot reach.
 touch cookies.txt      # bind-mount target must exist before first start
 ```
 
+This leaves an **empty** cookies.txt, which is expected and fine. `/api/health`
+will report `"cookies": false, "cookies_detail": "empty"` until you upload a real
+jar — that is the correct reading, not a fault. Only Instagram and other
+login-gated sources need one.
+
 ## Step 3 — Start the API
 
 ```bash

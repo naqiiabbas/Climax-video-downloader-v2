@@ -4,6 +4,7 @@ import { exec, execFile } from "child_process";
 import path from "path";
 import { config } from "../config.js";
 import { VideoCache } from "../utils/cache.js";
+import { cookieArgList } from "../utils/cookies.js";
 
 const downloadDir = config.downloadsDir;
 if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
@@ -125,10 +126,7 @@ export const PrepareDownload = (req, res) => {
     "--no-simulate",
   ];
 
-  if (fs.existsSync(config.cookiesPath)) {
-    args.push("--cookies", config.cookiesPath);
-  }
-
+  args.push(...cookieArgList());
   args.push(pageUrl);
 
   execFile(

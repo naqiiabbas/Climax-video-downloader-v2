@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { config } from "../config.js";
 import { VideoCache } from "../utils/cache.js";
+import { cookieStatus } from "../utils/cookies.js";
 
 /**
  * Replaces cookies.txt, which yt-dlp uses to reach login-gated content
@@ -105,10 +106,16 @@ export const DeleteVideo = (req, res) => {
 
 /** Liveness probe for the VPS / container orchestrator. */
 export const Health = (_req, res) => {
+  // Reports whether the jar is USABLE, not merely present. Deployment creates
+  // an empty cookies.txt for the bind mount, and reporting that as `true` hides
+  // the fact that no login-gated source can work.
+  const cookies = cookieStatus();
+
   res.json({
     status: "ok",
     uptime: Math.round(process.uptime()),
-    cookies: fs.existsSync(config.cookiesPath),
+    cookies: cookies.usable,
+    cookies_detail: cookies.reason,
     cachedVideos: VideoCache.getAllVideos().length,
     timestamp: new Date().toISOString(),
   });

@@ -36,7 +36,7 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 | # | Method | Endpoint | Status | Notes |
 |---|---|---|---|---|
 | 1 | GET | `/` | ✅ Working | Service banner |
-| 2 | GET | `/api/health` | ✅ Working | Open, no key needed |
+| 2 | GET | `/api/health` | ✅ Working | Open, no key needed. Reports cookie *usability* |
 | 3 | GET | `/api/download` | ✅ Working | Universal (Facebook, YouTube, X, Reddit…) |
 | 4 | GET | `/api/tiktok` | ⚠️ Working, slow | 5–20s, retries internally |
 | 5 | GET | `/api/instagram` | ❌ **Not working** | Needs a valid `cookies.txt` |

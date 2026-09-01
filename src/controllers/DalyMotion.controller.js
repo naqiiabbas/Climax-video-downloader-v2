@@ -1,15 +1,13 @@
 import { exec } from "child_process";
-import fs from "fs";
 import { config } from "../config.js";
 import { buildResponse } from "../utils/media.js";
+import { cookieArgString } from "../utils/cookies.js";
 
 const ytdlp = config.ytdlpPath;
 
 function runYtDlp(url) {
   return new Promise((resolve, reject) => {
-    const cookieArg = fs.existsSync(config.cookiesPath)
-      ? `--cookies ${JSON.stringify(config.cookiesPath)} `
-      : "";
+    const cookieArg = cookieArgString();
 
     const command = `"${ytdlp}" -j --no-warnings ${cookieArg}${JSON.stringify(url)}`;
 

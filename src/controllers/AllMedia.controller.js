@@ -1,17 +1,15 @@
 import { exec } from "child_process";
-import fs from "fs";
 import { config } from "../config.js";
 import { buildResponse } from "../utils/media.js";
+import { cookieArgString } from "../utils/cookies.js";
 
 const ytdlp = config.ytdlpPath;
 
 function runYtDlp(url) {
   return new Promise((resolve, reject) => {
-    // Only pass --cookies when the file is present, otherwise yt-dlp aborts
-    // with "cookies file not found" for sites that need no auth at all.
-    const cookieArg = fs.existsSync(config.cookiesPath)
-      ? `--cookies ${JSON.stringify(config.cookiesPath)} `
-      : "";
+    // Only pass --cookies when the jar is actually usable — an empty or
+    // malformed file makes yt-dlp abort every request. See utils/cookies.js.
+    const cookieArg = cookieArgString();
 
     // No --format selector: -j dumps every format regardless, and the selector
     // makes yt-dlp abort with "Requested format is not available" on sources

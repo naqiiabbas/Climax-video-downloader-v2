@@ -1,7 +1,7 @@
 import { exec } from "child_process";
-import fs from "fs";
 import { config } from "../config.js";
 import { buildResponse } from "../utils/media.js";
+import { cookieArgString } from "../utils/cookies.js";
 
 const ytdlp = config.ytdlpPath;
 
@@ -31,9 +31,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * variants are tried in case one is healthier than the other at the time.
  */
 function runYtDlp(url) {
-  const cookieArg = fs.existsSync(config.cookiesPath)
-    ? `--cookies ${JSON.stringify(config.cookiesPath)} `
-    : "";
+  const cookieArg = cookieArgString();
   const base = `"${ytdlp}" --geo-bypass -j --no-warnings ${cookieArg}`;
   const target = JSON.stringify(url);
 
