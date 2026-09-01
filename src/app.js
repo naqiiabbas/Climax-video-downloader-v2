@@ -9,6 +9,7 @@ import VimeoRoutes from "./routes/Vimeo.routes.js";
 import DalyMotionRoutes from "./routes/DalyMotion.route.js";
 import DownloadsRoutes from "./routes/downloads.routes.js";
 import SystemRoutes from "./routes/system.routes.js";
+import HistoryRoutes from "./routes/history.routes.js";
 import { verifyStrongKey } from "./middleware/apiAuth.js";
 
 export function createApp() {
@@ -35,6 +36,11 @@ export function createApp() {
   // Contains /api/health (open), /api/update-cookies and /api/delete-video
   // (each gated inside the router).
   app.use("/api", SystemRoutes);
+
+  // Download history. Still behind the API key like everything else, but the
+  // per-user isolation comes from the caller's own Supabase token, which
+  // history.controller.js forwards to PostgREST for RLS to enforce.
+  app.use("/api/history", verifyStrongKey, HistoryRoutes);
 
   // HLS -> mp4 conversion runs ffmpeg, so it is gated too. Mounted on the
   // deeper path before the /api gates for the same reason.

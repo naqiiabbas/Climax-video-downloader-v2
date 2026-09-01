@@ -55,6 +55,19 @@ export const config = {
   // ~40% of the time, so retry before giving up.
   tiktokRetries: Number(process.env.TIKTOK_RETRIES) || 8,
 
+  // Download history, stored in Supabase Postgres. Disabled unless both are
+  // set. Deliberately the ANON key, never the service_role key: requests are
+  // made with the end user's own access token so row-level security decides
+  // what they can see. A service_role key here would bypass RLS entirely and
+  // turn any VPS compromise into full database access.
+  supabase: {
+    url: (process.env.SUPABASE_URL || "").replace(/\/+$/, ""),
+    anonKey: process.env.SUPABASE_ANON_KEY || "",
+    get enabled() {
+      return Boolean(this.url && this.anonKey);
+    },
+  },
+
   instagram: {
     username: process.env.IG_USERNAME || "",
     password: process.env.IG_PASSWORD || "",

@@ -56,6 +56,11 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 | 10 | GET | `/downloads/<file>` | ✅ Working | Serves converted files, no key |
 | 11 | GET | `/api/delete-video` | ✅ Working | |
 | 12 | POST | `/api/update-cookies` | ✅ Working | Admin only |
+| 13 | GET | `/api/history/status` | ✅ Working | Is history configured? |
+| 14 | GET | `/api/history` | ⚙️ Needs setup | Caller's own history |
+| 15 | POST | `/api/history` | ⚙️ Needs setup | Record a download |
+| 16 | DELETE | `/api/history/:id` | ⚙️ Needs setup | Delete one entry |
+| 17 | DELETE | `/api/history` | ⚙️ Needs setup | Clear all |
 
 ---
 
@@ -170,6 +175,63 @@ Multipart, field `file`. Max 5 MB, `.txt` + `text/plain`, must be Netscape forma
 Admin operation — should not be exposed in the mobile app.
 
 ---
+
+## Download history (Supabase)
+
+Per-user history, stored in Supabase Postgres. Two headers are required:
+
+```
+x-api-key:        <API_KEY>                 as on every endpoint
+x-supabase-token: <user's access token>     from the app's Supabase session
+```
+
+The second one is what makes history per-user. The server holds only the **anon**
+key and forwards the caller's own token to PostgREST, so row-level security
+decides what they can see. Consequences worth knowing:
+
+- A user id **cannot be forged**. Holding this API's key is not enough to read
+  someone else's history — you need that user's Supabase session.
+- No `service_role` key sits on the VPS, so compromising it does not expose the
+  database.
+- An expired session returns **401**. Refresh the Supabase session and retry.
+
+### Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/history/status` | `{enabled}` — no user token needed. Use it to decide whether to show a History tab |
+| GET | `/api/history?limit=50&offset=0` | Caller's entries, newest first. `limit` caps at 200 |
+| POST | `/api/history` | Record one completed download |
+| DELETE | `/api/history/:id` | Delete one entry |
+| DELETE | `/api/history` | Clear the caller's history |
+
+`POST` body — only `page_url` is required, the rest come straight from the
+extraction response:
+
+```json
+{
+  "page_url": "https://www.youtube.com/watch?v=...",
+  "source": "Youtube",
+  "title": "...",
+  "author": "...",
+  "thumbnail": "https://...",
+  "duration": 213,
+  "quality": "720",
+  "file_size_bytes": 11903240
+}
+```
+
+Unknown fields are ignored rather than written, so a client cannot inject
+arbitrary columns.
+
+### Server setup (once)
+
+1. Run [`supabase/schema.sql`](../supabase/schema.sql) in the Supabase SQL Editor.
+2. Set `SUPABASE_URL` and `SUPABASE_ANON_KEY` in `.env`, then recreate the
+   container.
+
+Until both are done, every history endpoint returns **503** and
+`/api/history/status` reports `enabled: false`. Nothing else is affected.
 
 ## What the mobile client must handle
 
