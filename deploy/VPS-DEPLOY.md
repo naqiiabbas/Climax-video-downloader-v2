@@ -238,7 +238,13 @@ Lower `DEFAULT_QUALITY` if it grows faster than you like.
 docker compose -f docker-compose.vps.yml logs -f api
 ```
 
-**Updating yt-dlp.** Extractors break as sites change; rebuild periodically:
+**Updating yt-dlp.** The image installs the `yt-dlp_linux` standalone asset,
+which bundles `curl_cffi` for the browser impersonation some extractors now
+require (Dailymotion among them). Do not switch this to the plain `yt-dlp`
+release — it lacks curl_cffi and those extractors fail at request time. The
+build runs `--list-impersonate-targets` so a wrong asset fails loudly.
+
+Extractors break as sites change; rebuild periodically:
 
 ```bash
 docker compose -f docker-compose.vps.yml build --no-cache api

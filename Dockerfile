@@ -1,14 +1,28 @@
 FROM node:20-slim
 
-# yt-dlp needs python3; ffmpeg does the HLS -> mp4 remux.
+# ffmpeg does the HLS -> mp4 remux and the video+audio merge.
+#
+# The yt-dlp asset matters: the plain `yt-dlp` release is the Python zipimport
+# build and does NOT bundle curl_cffi, so any extractor that needs browser
+# impersonation fails with "attempting impersonation, but none of these
+# impersonate targets are available" — Dailymotion does this today. The
+# `yt-dlp_linux` standalone build bundles curl_cffi (and its own Python, so
+# python3 is not needed here).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 \
       ffmpeg \
       ca-certificates \
       curl \
- && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+ && ARCH="$(dpkg --print-architecture)" \
+ && case "$ARCH" in \
+      amd64) YTDLP_ASSET=yt-dlp_linux ;; \
+      arm64) YTDLP_ASSET=yt-dlp_linux_aarch64 ;; \
+      *) echo "unsupported architecture: $ARCH" >&2; exit 1 ;; \
+    esac \
+ && curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/$YTDLP_ASSET" \
       -o /usr/local/bin/yt-dlp \
  && chmod a+rx /usr/local/bin/yt-dlp \
+ && /usr/local/bin/yt-dlp --version \
+ && /usr/local/bin/yt-dlp --list-impersonate-targets \
  && apt-get purge -y curl \
  && apt-get autoremove -y \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
