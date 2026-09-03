@@ -2,7 +2,7 @@
 
 Every endpoint that exists in the service today, with its live status.
 
-**Last verified:** 2026-09-01 · yt-dlp `2026.08.19` · all endpoints called against real URLs, not mocked.
+**Last verified:** 2026-09-03 · yt-dlp `2026.08.19` · all endpoints called against real URLs, not mocked.
 
 Full request/response reference: [../docs/API.md](../docs/API.md)
 Postman collection: [../docs/postman_collection.json](../docs/postman_collection.json)
@@ -49,8 +49,8 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 | 3 | GET | `/api/download` | ✅ Working | Universal (Facebook, YouTube, X, Reddit…) |
 | 4 | GET | `/api/tiktok` | ⚠️ Working, slow | 5–20s, retries internally |
 | 5 | GET | `/api/instagram` | ❌ **Not working** | Needs a valid `cookies.txt` |
-| 6 | GET | `/api/vimeo` | ⚠️ Working, conversion required | HLS only |
-| 7 | GET | `/api/dailymotion` | ⚠️ Working, conversion required | HLS only. Also handles Pinterest |
+| 6 | GET | `/api/vimeo` | ✅ Working, auto-converts | Slow (5–170s+); `?raw=1`/`?quality=` available |
+| 7 | GET | `/api/dailymotion` | ✅ Working, auto-converts | Also handles Pinterest; same params as Vimeo |
 | 8 | GET | `/api/downloads/mp4` | ✅ Working | HLS → MP4 |
 | 9 | GET | `/api/downloads/prepare` | ✅ Working | Download + merge video/audio → MP4 |
 | 10 | GET | `/downloads/<file>` | ✅ Working | Serves converted files, no key |
@@ -75,21 +75,24 @@ IP turned out not to hurt — nothing was bot-blocked, and TikTok was markedly
 | YouTube | `/api/download` | ✅ 2.9s, 14 formats | `needs_merge` → **prepare** |
 | Facebook | `/api/download` | ✅ 2.9s, 5 formats | 2 direct downloads |
 | TikTok | `/api/tiktok` | ✅ 2.3s, 4 formats | 3 direct downloads |
-| Vimeo | `/api/vimeo` | ✅ 4.0s, 8 qualities | `needs_merge` → **prepare** |
-| Dailymotion | `/api/dailymotion` | ✅ 2.6s, 4 qualities | `needs_conversion` → **mp4** |
+| Vimeo | `/api/vimeo` | ✅ auto-converts to mp4 (5–170s+, see below) | ready to download |
+| Dailymotion | `/api/dailymotion` | ✅ auto-converts to mp4 (~11s) | ready to download |
 | Instagram | `/api/instagram` | ❌ Needs a cookies.txt upload | — |
 | Pinterest, Reddit, X, Twitch | `/api/download` | ❓ Untested — sample URLs were dead links | — |
 
 `/api/downloads/prepare` verified on the VPS: YouTube at 360p returned an
 11.9 MB MP4.
 
-> **Vimeo needs merging, not conversion.** Its 8 entries are video-only HLS
-> renditions plus a separate audio track — zero carry both. Sending one to
-> `/api/downloads/mp4` produces a **silent video**. Follow `needs_merge` first,
-> before `needs_conversion`.
-
-Anything else yt-dlp supports should work through `/api/download`, but only the
-rows above have actually been exercised.
+> **Vimeo and Dailymotion auto-convert as of 2026-09-03.** Both used to return
+> a raw m3u8 playlist that a naive client would save as a broken "video" — that
+> was reported as "Vimeo download isn't working" and is the same bug as the
+> m3u8-format complaint. By default both endpoints now download and remux
+> server-side and hand back one ready `.mp4` link, with `needs_merge: false`.
+> **This makes those two endpoints slow** — a real download, not a metadata
+> probe (measured 5s–172s depending on length/quality) — so give them a much
+> longer client timeout than the others, or pass `?quality=480` to bound it.
+> `?raw=1` restores the old fast, metadata-only, per-quality list. Full
+> details in [docs/API.md](../docs/API.md#auto-conversion--vimeo-and-dailymotion-only).
 
 Anything else yt-dlp supports should work through `/api/download`, but only the
 rows above have actually been exercised.
@@ -122,15 +125,42 @@ ERROR: [Instagram] Instagram sent an empty media response.
 
 **Treat Instagram as best-effort in the app** — surface a clear "temporarily unavailable" message rather than a generic error.
 
-### 6. `GET /api/vimeo` — Vimeo ⚠️
+### 6. `GET /api/vimeo` — Vimeo ✅ (auto-converts)
 
-**Verified:** `200` in 7.4s, 8 qualities (240p–2160p). **All 8 need conversion** — zero directly downloadable.
+Vimeo only ever publishes HLS — its raw entries are video-only renditions plus
+a separate audio track, so **by default** the endpoint downloads and remuxes
+server-side and returns one ready `.mp4`:
 
-### 7. `GET /api/dailymotion` — Dailymotion + Pinterest ⚠️
+```json
+{ "needs_merge": false, "auto_converted": true,
+  "media": [{ "url": "https://.../downloads/video_....mp4", "quality": "1080",
+              "has_video": true, "has_audio": true, "protocol": "https",
+              "needs_conversion": false, "size": "368.90 MB" }] }
+```
 
-**Verified:** `200` in 4.7s, 4 qualities (288p–1080p). **All 4 need conversion.**
+**Verified:** a 13-minute video at the default `quality=1080` took **172s** and
+produced a valid 368.9 MB mp4 (ffprobe: h264 1080p + aac stereo) — the size
+estimate from the raw listing (369.5 MB) was accurate to within 0.2%.
 
-Entries report `extension: "mp4"` but the URL is an HLS playlist. A plain GET returns ~554 bytes of text served as `content-type: video/mp4`.
+Pass `?quality=480` (or lower) to trade quality for speed, or `?raw=1` for the
+old fast per-quality m3u8 list (`needs_conversion: true` on every entry) if you
+want to build your own quality picker and convert on demand via
+`/api/downloads/mp4`.
+
+If server-side conversion fails, the endpoint falls back to the raw list rather
+than erroring — check `auto_converted` (`false` means you got the raw list;
+`auto_convert_error` says why).
+
+### 7. `GET /api/dailymotion` — Dailymotion + Pinterest ✅ (auto-converts)
+
+Same behavior as Vimeo — **verified:** `200` in ~11s, single ready mp4, 11.92 MB
+(ffprobe-valid, `ftypiso5`). Same `quality` and `raw=1` params, same
+graceful-fallback behavior on conversion failure.
+
+Previously every entry reported `extension: "mp4"` while the URL was actually
+an HLS playlist — a plain GET returned ~554 bytes of text served as
+`content-type: video/mp4`. That is fixed now by not handing the client the raw
+playlist URL at all in the default response.
 
 ---
 
@@ -256,13 +286,20 @@ const convert = media.find(m => m.has_video && m.has_audio && m.needs_conversion
 The top-level **`needs_merge: true`** means no single entry carries both video
 and audio, so `/api/downloads/prepare` is the only way to get a usable file.
 
-**Vimeo and Dailymotion have no direct option at all** — conversion is the only path.
+**Vimeo and Dailymotion no longer need any of this by default** — as of
+2026-09-03 both auto-convert server-side and hand back one ready mp4 in
+`media[0]` (`needs_merge: false`, `needs_conversion: false`). The rules above
+only apply to them if you pass `?raw=1` to get the old raw m3u8 list back.
 
 **2. Extracted URLs expire within minutes.** Resolve immediately before downloading; never cache them.
 
 **3. `size_is_estimate: true`** means the size came from bitrate × duration. Show it as approximate.
 
-**4. Timeouts.** 60s for extraction; longer for `/api/downloads/mp4`.
+**4. Timeouts.** 60s for extraction and `/downloads/prepare`. **Vimeo and
+Dailymotion need much more** — their default auto-conversion is a real
+download (measured 5s–172s), not a metadata probe. Give those two a generous
+timeout (minutes, not seconds) or pass `?quality=480` to bound the work, or
+`?raw=1` to skip conversion and get a fast response back.
 
 ---
 
@@ -272,8 +309,6 @@ and audio, so `/api/downloads/prepare` is the only way to get a usable file.
 |---|---|
 | Instagram needs manual cookie upload | Endpoint 5 down until cookies are supplied; recurs on expiry |
 | TikTok reliability depends on retries | ~40% single-attempt success; retries cover it but cost latency |
-| Conversion and merge are synchronous | A large file holds the request open for a minute or more; no progress reporting. `/api/downloads/prepare` at `best` can run for minutes |
+| Conversion and merge are synchronous | A large file holds the request open for a minute or more; no progress reporting. `/api/downloads/prepare`, and now `/api/vimeo`/`/api/dailymotion` by default, can run for minutes at `best`/`1080` |
 | No rate limiting | Any holder of the API key can drive unlimited ffmpeg jobs |
-| Docker image unverified | Never built — Docker was not running on the dev machine |
-| Datacenter IP untested | All platform results above come from a residential IP |
-| Merged files consume VPS disk | ~230 MB per `best`-quality YouTube merge, held for `CACHE_TTL_SECONDS` |
+| Merged/converted files consume VPS disk on every call | Was opt-in (only when a client explicitly requested conversion); as of 2026-09-03 every default `/api/vimeo` and `/api/dailymotion` call writes one, held for `CACHE_TTL_SECONDS`. `?raw=1` avoids this. |

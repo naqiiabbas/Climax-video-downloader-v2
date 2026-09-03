@@ -46,6 +46,16 @@ export const config = {
   // minutes; past this the request is killed and returns 504.
   mergeTimeoutMs: Number(process.env.MERGE_TIMEOUT_MS) || 600_000,
 
+  // Vimeo and Dailymotion only ever publish HLS (m3u8) — a naive client that
+  // GETs that URL and saves it gets a text playlist, not a video. When this is
+  // on (the default), /api/vimeo and /api/dailymotion download and remux the
+  // video server-side and hand back a ready .mp4 link instead, the same way
+  // /api/downloads/prepare already does for YouTube. Adds real latency (a full
+  // download, not just a metadata probe) to those two endpoints; set
+  // AUTO_CONVERT=false to get the old fast metadata-only response, or pass
+  // ?raw=1 on a single request to opt out without changing server config.
+  autoConvert: process.env.AUTO_CONVERT !== "false",
+
   // Routes TikTok extraction through the mobile API host, which works when
   // the web extractor breaks. Set empty to always use yt-dlp's default.
   tiktokApiHostname:

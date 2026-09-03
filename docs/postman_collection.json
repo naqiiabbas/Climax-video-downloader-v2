@@ -86,22 +86,43 @@
       "response": []
     },
     {
-      "name": "Vimeo",
+      "name": "Vimeo (auto-converts, slow)",
       "request": {
         "method": "GET",
         "header": [],
         "url": {
-          "raw": "{{BaseUrl}}/api/vimeo?url=https://vimeo.com/1160592223",
+          "raw": "{{BaseUrl}}/api/vimeo?url=https://vimeo.com/1160592223&quality=480",
           "host": ["{{BaseUrl}}"],
           "path": ["api", "vimeo"],
-          "query": [{ "key": "url", "value": "https://vimeo.com/1160592223" }]
+          "query": [
+            { "key": "url", "value": "https://vimeo.com/1160592223" },
+            { "key": "quality", "value": "480", "description": "best|2160|1440|1080|720|480|360|240 — lower is faster" }
+          ]
         },
-        "description": "Vimeo serves adaptive streams: entries normally come back with needs_conversion=true."
+        "description": "Vimeo is HLS-only, so by default this downloads and remuxes server-side and returns one ready mp4 (needs_merge:false, auto_converted:true) — a real download, not a metadata probe (measured 5-172s). Set Postman's request timeout well above default. Add &raw=1 for the old fast, metadata-only, per-quality m3u8 list."
       },
       "response": []
     },
     {
-      "name": "Dailymotion / Pinterest",
+      "name": "Vimeo raw (fast, m3u8 list)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/vimeo?url=https://vimeo.com/1160592223&raw=1",
+          "host": ["{{BaseUrl}}"],
+          "path": ["api", "vimeo"],
+          "query": [
+            { "key": "url", "value": "https://vimeo.com/1160592223" },
+            { "key": "raw", "value": "1" }
+          ]
+        },
+        "description": "Old behavior: fast, metadata-only, every entry needs_conversion=true. Feed one to Downloads / HLS to MP4 yourself if you want a client-driven quality picker instead of the server's automatic choice."
+      },
+      "response": []
+    },
+    {
+      "name": "Dailymotion / Pinterest (auto-converts)",
       "request": {
         "method": "GET",
         "header": [],
@@ -116,7 +137,7 @@
             }
           ]
         },
-        "description": "Dailymotion is HLS-only, so every entry has needs_conversion=true despite extension mp4."
+        "description": "Dailymotion is HLS-only, so by default this downloads and remuxes server-side and returns one ready mp4 (needs_merge:false, auto_converted:true), typically ~10s. Add &raw=1 for the old per-quality m3u8 list (every entry had needs_conversion=true despite extension:mp4)."
       },
       "response": []
     },

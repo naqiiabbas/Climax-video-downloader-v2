@@ -31,8 +31,8 @@ the yt-dlp workers; it is not user authentication.
 | GET | `/api/download` | Universal — any yt-dlp-supported site |
 | GET | `/api/tiktok` | TikTok (adds `--geo-bypass`) |
 | GET | `/api/instagram` | Instagram (uses cookies.txt) |
-| GET | `/api/vimeo` | Vimeo (custom extractor) |
-| GET | `/api/dailymotion` | Dailymotion **and** Pinterest |
+| GET | `/api/vimeo` | Vimeo (custom extractor). **Auto-converts to mp4 by default** — see below |
+| GET | `/api/dailymotion` | Dailymotion **and** Pinterest. **Auto-converts to mp4 by default** — see below |
 
 ### Request
 
@@ -90,8 +90,10 @@ const viaConversion = media.find(m => m.has_video && m.has_audio && m.needs_conv
 // prefer `direct`; otherwise POST viaConversion.url to /api/downloads/mp4
 ```
 
-Some sources offer no direct option at all — Dailymotion and Vimeo are HLS-only,
-so conversion is the **only** path there.
+Dailymotion and Vimeo publish HLS (m3u8) only — never a direct file — so by
+default `/api/dailymotion` and `/api/vimeo` **convert server-side and return one
+ready mp4** instead of the raw playlist list. See the dedicated section below;
+you do not need the rule above for these two sources unless you pass `?raw=1`.
 
 Other notes:
 
@@ -106,6 +108,63 @@ Other notes:
 - **TikTok only** also returns `media[].headers` and `media[].cookies`. The
   client **must** replay those headers on the download request or the CDN
   returns 403.
+
+### Auto-conversion — Vimeo and Dailymotion only
+
+Both sources only ever publish HLS. A naive `GET` on the raw playlist URL
+returns `200` with a real, valid-looking response — it is just a ~30 KB text
+file, not a video. That was reported as "Vimeo download isn't working"; it is
+the same failure as the m3u8-instead-of-mp4 complaint, not a separate bug.
+
+**By default, `/api/vimeo` and `/api/dailymotion` now download and remux the
+video server-side and return one ready `.mp4` link** instead of the raw
+per-quality list — no client-side conversion step needed:
+
+```json
+{
+  "url": "https://vimeo.com/1160592223",
+  "source": "Vimeo",
+  "title": "...",
+  "needs_merge": false,
+  "auto_converted": true,
+  "media": [
+    {
+      "url": "https://your-domain/downloads/video_....mp4",
+      "quality": "1080",
+      "extension": "mp4",
+      "type": "video",
+      "has_video": true,
+      "has_audio": true,
+      "protocol": "https",
+      "needs_conversion": false,
+      "size_bytes": 386814026,
+      "size": "368.90 MB",
+      "size_is_estimate": false
+    }
+  ]
+}
+```
+
+**This is slow — it is a real download, not a metadata probe.** A short clip
+converts in 5–25s; a 13-minute Vimeo video at 1080p measured **172s**. Set the
+client's HTTP timeout well above what extraction used to need (a 60s timeout
+that worked before will now cut off long or high-quality videos mid-request).
+`quality` (below) is the lever to trade this off.
+
+Query parameters:
+
+| Param | Effect |
+|---|---|
+| `quality` | Same values as `/api/downloads/prepare`: `best`, `2160`, `1440`, `1080` (default), `720`, `480`, `360`, `240`. Lower = faster and smaller. |
+| `raw=1` | Skip conversion; return the old fast, metadata-only, per-quality m3u8 list (`needs_conversion: true` on every entry) for a client that wants to offer its own quality picker and convert on demand via `/api/downloads/mp4`. |
+
+If the server-side conversion fails for any reason, the endpoint **does not
+error out** — it falls back to the raw list with `auto_converted: false` and an
+`auto_convert_error` message, so the request still returns something usable.
+
+Server-wide, this can be turned off with `AUTO_CONVERT=false` in `.env`
+(reverts both endpoints to the old always-raw behavior; `?raw=1` still works
+either way).
 
 ### Errors
 
@@ -186,8 +245,13 @@ is the normal starting state and only affects login-gated sources.
 - **Extracted URLs are short-lived.** TikTok and Instagram links expire within
   minutes. Resolve immediately before downloading; do not cache them.
 - **Extraction is slow.** yt-dlp can take 5–30s. Use a 60s client timeout;
-  Nginx allows 300s. TikTok is the slowest because the server retries
-  internally against rate limiting (measured 5–20s).
+  Nginx allows 300s. TikTok is the slowest of the metadata-only endpoints
+  because the server retries internally against rate limiting (measured 5–20s).
+  **Vimeo and Dailymotion are a different case** — they auto-convert by
+  default (see above) and that is a real download, not a probe: 5–25s
+  typically, up to several minutes for a long or high-quality video. Give
+  those two endpoints a much longer timeout than the others, or pass
+  `?quality=480` (or lower) to bound it.
 - **TikTok fails intermittently by design of their anti-bot.** A single
   anonymous attempt succeeds ~40% of the time, so the server retries up to
   `TIKTOK_RETRIES` (default 8) times, which measured 6/6 successes. Uploading a

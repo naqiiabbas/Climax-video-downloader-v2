@@ -5,6 +5,8 @@ import util from "util";
 const execFileP = util.promisify(execFile);
 import { config } from "../config.js";
 import { computeNeedsMerge } from "../utils/media.js";
+import { mergeToMp4, publicDownloadUrl, MergeError } from "../utils/mergeDownload.js";
+import { parseQuality } from "../utils/quality.js";
 
 const ytdlp = config.ytdlpPath;
 const USER_AGENT =
@@ -367,6 +369,56 @@ export const FetchVimeo = async (req, res) => {
       finalMedia = mp4Media;
     }
 
+    // Vimeo's entries are video-only HLS renditions plus a separate audio
+    // track — none are downloadable as-is. By default this converts the video
+    // server-side (the same yt-dlp+ffmpeg merge /api/downloads/prepare uses)
+    // and returns one ready .mp4 link instead of the raw m3u8 list. A naive
+    // client GETting an m3u8 URL directly gets a valid-looking 200 response
+    // that is actually a ~30KB text playlist, not a video — this was reported
+    // as "Vimeo download isn't working" and is fixed at the source here.
+    //
+    // ?raw=1 skips this and returns the old per-quality m3u8 list — useful for
+    // a quality-picker UI that converts on demand via /api/downloads/mp4.
+    const rawRequested = ["1", "true", "yes"].includes(String(req.query.raw || "").toLowerCase());
+    const ready = finalMedia.find((m) => m.has_video && m.has_audio && m.protocol === "https");
+
+    let responseMedia = finalMedia;
+    let needsMerge = computeNeedsMerge(finalMedia);
+    let autoConverted = false;
+    let autoConvertError = null;
+
+    if (!rawRequested && !ready && config.autoConvert) {
+      const quality = parseQuality(req.query.quality, config.defaultQuality) || config.defaultQuality;
+      try {
+        // mergeToMp4 rewrites vimeo.com URLs to player.vimeo.com internally
+        // (see vimeoWorkaround in mergeDownload.js) — a plain vimeo.com/<id>
+        // makes yt-dlp's download path demand a login even though -j metadata
+        // extraction against that same URL works fine.
+        const { cacheKey, sizeBytes } = await mergeToMp4(url, quality);
+        responseMedia = [{
+          url: publicDownloadUrl(req, cacheKey),
+          format_id: null,
+          quality,
+          extension: "mp4",
+          type: "video",
+          has_video: true,
+          has_audio: true,
+          protocol: "https",
+          needs_conversion: false,
+          size_bytes: sizeBytes,
+          size: humanSize(sizeBytes),
+          size_is_estimate: false,
+        }];
+        needsMerge = false;
+        autoConverted = true;
+      } catch (err) {
+        // Degrade rather than fail the whole request: hand back the raw m3u8
+        // list (still usable via /api/downloads/mp4) instead of a hard 500.
+        console.error("Vimeo auto-convert failed:", err);
+        autoConvertError = err instanceof MergeError ? err.message : "Conversion failed";
+      }
+    }
+
     const response = {
       url: meta.url || null,
       source: meta.source || null,
@@ -374,14 +426,12 @@ export const FetchVimeo = async (req, res) => {
       thumbnail: meta.thumbnail || null,
       title: meta.title || null,
       duration: meta.duration || null,
-      // Same rule as every other extractor. Vimeo returns video-only HLS
-      // renditions plus a separate audio track, so this is normally true and
-      // steers the client to /api/downloads/prepare rather than the HLS remux,
-      // which would hand back a silent video.
-      needs_merge: computeNeedsMerge(finalMedia),
-      media: finalMedia,
+      needs_merge: needsMerge,
+      media: responseMedia,
+      auto_converted: autoConverted,
+      ...(autoConvertError ? { auto_convert_error: autoConvertError } : {}),
       format_preference: mp4Media.length > 0 ? 'mp4_only' : 'all_formats',
-      ...(finalMedia.length === 0 ? {
+      ...(responseMedia.length === 0 ? {
         debug: {
           stderr_sample: (stderr || "").slice(0, 2000),
           stdout_sample: (stdout || "").slice(0, 2000),
