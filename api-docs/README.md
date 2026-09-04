@@ -131,10 +131,11 @@ previously it would have cached an unplayable file and reported `success: true`.
 protected and cannot be downloaded". Do not retry, and do not offer a lower
 quality — every route fails identically.
 
-**Not yet known:** whether this is per-video or Vimeo-wide. Video `1160592223`
-converted successfully on 2026-09-03; re-test it to find out, and update this
-section either way. If Vimeo has enabled DRM broadly, `/api/vimeo`
-auto-conversion is no longer a viable feature.
+**Scope: per-video, not Vimeo-wide** — measured on the production VPS
+2026-09-04. `1160592223` still auto-converts normally (`drm_protected: false`,
+a valid 64.3 MB h264 mp4 at `quality=480`), while `76979871` is DRM'd. So
+`/api/vimeo` remains a working feature; expect an occasional 422 rather than a
+broken endpoint, and re-check if the rate of DRM'd videos climbs.
 
 Note this is distinct from the **401** case (e.g. `1071084785`): that video is
 publicly viewable but embed-restricted by its owner, so extraction itself fails
@@ -186,6 +187,12 @@ server-side and returns one ready `.mp4`:
 **Verified:** a 13-minute video at the default `quality=1080` took **172s** and
 produced a valid 368.9 MB mp4 (ffprobe: h264 1080p + aac stereo) — the size
 estimate from the raw listing (369.5 MB) was accurate to within 0.2%.
+
+Quality dominates that number far more than length does. The same 13-minute
+video at `quality=480` produced a valid 64.3 MB mp4 in **~4 seconds** on the
+VPS (2026-09-04). The "give Vimeo minutes" advice is really about 1080p, not
+about the endpoint — passing `?quality=480` makes it comparable to the
+metadata-only endpoints.
 
 Pass `?quality=480` (or lower) to trade quality for speed, or `?raw=1` for the
 old fast per-quality m3u8 list (`needs_conversion: true` on every entry) if you
