@@ -49,7 +49,7 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 | 3 | GET | `/api/download` | ✅ Working | Universal (Facebook, YouTube, X, Reddit…) |
 | 4 | GET | `/api/tiktok` | ⚠️ Working, slow | 5–20s, retries internally |
 | 5 | GET | `/api/instagram` | ❌ **Not working** | Needs a valid `cookies.txt` |
-| 6 | GET | `/api/vimeo` | ✅ Working, auto-converts | Slow (5–170s+); `?raw=1`/`?quality=` available |
+| 6 | GET | `/api/vimeo` | ⚠️ Working, but **DRM-blocked on some videos** | Slow (5–170s+); `?raw=1`/`?quality=` available. See [DRM](#drm-protected-videos-vimeo) |
 | 7 | GET | `/api/dailymotion` | ✅ Working, auto-converts | Also handles Pinterest; same params as Vimeo |
 | 8 | GET | `/api/downloads/mp4` | ✅ Working | HLS → MP4 |
 | 9 | GET | `/api/downloads/prepare` | ✅ Working | Download + merge video/audio → MP4 |
@@ -75,7 +75,7 @@ IP turned out not to hurt — nothing was bot-blocked, and TikTok was markedly
 | YouTube | `/api/download` | ✅ 2.9s, 14 formats | `needs_merge` → **prepare** |
 | Facebook | `/api/download` | ✅ 2.9s, 5 formats | 2 direct downloads |
 | TikTok | `/api/tiktok` | ✅ 2.3s, 4 formats | 3 direct downloads |
-| Vimeo | `/api/vimeo` | ✅ auto-converts to mp4 (5–170s+, see below) | ready to download |
+| Vimeo | `/api/vimeo` | ⚠️ auto-converts when not DRM'd (5–170s+) | ready to download, **or 422 `drm_protected`** |
 | Dailymotion | `/api/dailymotion` | ✅ auto-converts to mp4 (~11s) | ready to download |
 | Instagram | `/api/instagram` | ❌ Needs a cookies.txt upload | — |
 | Pinterest, Reddit, X, Twitch | `/api/download` | ❓ Untested — sample URLs were dead links | — |
@@ -96,6 +96,51 @@ IP turned out not to hurt — nothing was bot-blocked, and TikTok was markedly
 
 Anything else yt-dlp supports should work through `/api/download`, but only the
 rows above have actually been exercised.
+
+## DRM-protected videos (Vimeo)
+
+**Found 2026-09-04.** Vimeo now serves FairPlay/Widevine-encrypted CBCS streams
+for at least some videos and publishes **no progressive mp4** alongside them, so
+every delivery route is encrypted. Confirmed against Vimeo's own demo video
+`76979871` — its player config reports `progressive: 0` and `DRM = true` on all
+four CDN routes (hls + dash × two CDNs), and the playlist carries:
+
+```
+#EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://drm",KEYFORMAT="com.apple.streamingkeydelivery"
+```
+
+yt-dlp reads the manifest, so extraction still returns a full `media[]` with
+real resolutions and sizes — it just cannot decrypt the segments. This is a
+permanent property of the video, not a transient failure.
+
+The server now detects it from the CDN URLs and **skips the doomed download**
+rather than spending a minute discovering it:
+
+```json
+{ "drm_protected": true,
+  "auto_converted": false,
+  "error_code": "drm_protected",
+  "auto_convert_error": "This video is DRM protected and cannot be downloaded." }
+```
+
+Status is **422**. `/api/downloads/mp4` and `/api/downloads/prepare` return the
+same code, and `/api/downloads/mp4` checks the playlist before downloading —
+previously it would have cached an unplayable file and reported `success: true`.
+
+**Client:** branch on `error_code === "drm_protected"` and show "this video is
+protected and cannot be downloaded". Do not retry, and do not offer a lower
+quality — every route fails identically.
+
+**Not yet known:** whether this is per-video or Vimeo-wide. Video `1160592223`
+converted successfully on 2026-09-03; re-test it to find out, and update this
+section either way. If Vimeo has enabled DRM broadly, `/api/vimeo`
+auto-conversion is no longer a viable feature.
+
+Note this is distinct from the **401** case (e.g. `1071084785`): that video is
+publicly viewable but embed-restricted by its owner, so extraction itself fails
+and `media[]` comes back empty with a 502.
+
+---
 
 ## Extraction endpoints
 
@@ -310,5 +355,6 @@ timeout (minutes, not seconds) or pass `?quality=480` to bound the work, or
 | Instagram needs manual cookie upload | Endpoint 5 down until cookies are supplied; recurs on expiry |
 | TikTok reliability depends on retries | ~40% single-attempt success; retries cover it but cost latency |
 | Conversion and merge are synchronous | A large file holds the request open for a minute or more; no progress reporting. `/api/downloads/prepare`, and now `/api/vimeo`/`/api/dailymotion` by default, can run for minutes at `best`/`1080` |
+| Vimeo DRM | Some Vimeo videos cannot be downloaded at all; scope not yet established |
 | No rate limiting | Any holder of the API key can drive unlimited ffmpeg jobs |
 | Merged/converted files consume VPS disk on every call | Was opt-in (only when a client explicitly requested conversion); as of 2026-09-03 every default `/api/vimeo` and `/api/dailymotion` call writes one, held for `CACHE_TTL_SECONDS`. `?raw=1` avoids this. |

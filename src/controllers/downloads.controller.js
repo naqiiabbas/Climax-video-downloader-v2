@@ -6,6 +6,7 @@ import { config } from "../config.js";
 import { VideoCache } from "../utils/cache.js";
 import { mergeToMp4, publicDownloadUrl, MergeError } from "../utils/mergeDownload.js";
 import { ALLOWED_QUALITIES, parseQuality } from "../utils/quality.js";
+import { playlistIsDrm, DRM_MESSAGE, DRM_CODE } from "../utils/drm.js";
 
 const downloadDir = config.downloadsDir;
 if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
@@ -15,10 +16,26 @@ if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
  * resolved a media entry with needs_conversion=true (or passed ?raw=1 to
  * /api/vimeo or /api/dailymotion and want to convert one themselves).
  */
-export const DownloadMediaMp4 = (req, res) => {
+export const DownloadMediaMp4 = async (req, res) => {
   const fileUrl = req.query.url;
   if (!fileUrl) {
     return res.status(400).json({ success: false, error: "Missing URL" });
+  }
+
+  // Refuse encrypted playlists BEFORE downloading anything.
+  //
+  // Without this the DRM path fails silently in the worst possible way:
+  // m3u8stream happily fetches the encrypted segments, `ffmpeg -c copy`
+  // remuxes them without ever checking that they decoded, and the result is
+  // cached and returned as `success: true` with a file_url the user cannot
+  // play. A clear 422 costs one small HTTP request.
+  const drm = await playlistIsDrm(fileUrl);
+  if (drm.isDrm) {
+    return res.status(422).json({
+      success: false,
+      error: DRM_MESSAGE,
+      error_code: DRM_CODE,
+    });
   }
 
   const outputFile = path.join(downloadDir, `video_${Date.now()}.ts`);
@@ -105,9 +122,12 @@ export const PrepareDownload = async (req, res) => {
     });
   } catch (err) {
     if (err instanceof MergeError) {
-      return res
-        .status(err.status)
-        .json({ success: false, error: err.message, details: err.details });
+      return res.status(err.status).json({
+        success: false,
+        error: err.message,
+        error_code: err.code,
+        details: err.details,
+      });
     }
     console.error("PrepareDownload error:", err);
     res.status(500).json({ success: false, error: "Download failed" });

@@ -166,6 +166,62 @@ Server-wide, this can be turned off with `AUTO_CONVERT=false` in `.env`
 (reverts both endpoints to the old always-raw behavior; `?raw=1` still works
 either way).
 
+### DRM-protected videos
+
+Vimeo has begun serving **FairPlay/Widevine-encrypted (CBCS) streams** for some
+videos, with no progressive mp4 alongside — every delivery route is encrypted.
+yt-dlp reads the manifest fine, which is why extraction still returns a full
+`media[]` with real resolutions and sizes, but it cannot decrypt the segments.
+Nothing can: the keys come from a licence server that requires a signed device
+certificate.
+
+When every entry is encrypted the response carries `drm_protected: true` and
+the status is **422**:
+
+```json
+{
+  "title": "...",
+  "needs_merge": true,
+  "media": [ ... entries that look normal but are encrypted ... ],
+  "auto_converted": false,
+  "drm_protected": true,
+  "auto_convert_error": "This video is DRM protected and cannot be downloaded.",
+  "error_code": "drm_protected"
+}
+```
+
+**Branch on `error_code` / `drm_protected`, not on the status code.** Retrying,
+lowering `quality`, passing `raw=1`, supplying cookies or updating yt-dlp will
+all fail identically. Show the user "this video is protected and cannot be
+downloaded" — it is a permanent property of the video, not a transient fault.
+
+`/api/downloads/mp4` and `/api/downloads/prepare` return the same
+`error_code: "drm_protected"` with a 422. `/api/downloads/mp4` checks the
+playlist **before** downloading anything: without that check it would fetch the
+encrypted segments, remux them, and hand back `success: true` and a file_url
+pointing at an unplayable file.
+
+Plain `#EXT-X-KEY:METHOD=AES-128` HLS encryption is **not** DRM — the key is an
+ordinary HTTP fetch and those downloads still work.
+
+### Error codes
+
+Every failure that reaches the client now carries a stable `error_code`:
+
+| `error_code` | Status | Meaning | Retry? |
+|---|---|---|---|
+| `drm_protected` | 422 | Encrypted content; no download is possible | Never |
+| `download_timeout` | 504 | Exceeded `MERGE_TIMEOUT_MS` | Yes, at a lower `quality` |
+| `download_failed` | 500 | yt-dlp failed; see `details` | Once |
+| `no_output` | 500 | yt-dlp reported success but produced no file | Once |
+| `cache_failed` | 500 | Server could not store the result | Once |
+| `conversion_failed` | 500 | Unexpected non-yt-dlp error | Once |
+
+The extraction endpoints also return `auto_convert_error_details` — the first
+500 characters of yt-dlp's actual stderr. Previously this was discarded and
+only the generic message survived, which made a DRM wall indistinguishable
+from a server fault.
+
 ### Errors
 
 | Code | Body |
@@ -231,14 +287,14 @@ deleted automatically when the TTL expires.
 |---|---|---|
 | GET | `/api/health` | **Open.** `{status, uptime, cookies, cookies_detail, cachedVideos, timestamp}` |
 | POST | `/api/update-cookies` | Multipart, field `file`. Max 5 MB, `.txt` + `text/plain`, must be Netscape format |
+| GET | `/api/delete-video?url=<file_url>` | Deletes a converted file before its TTL |
+| GET | `/downloads/<filename>` | Static serving of converted files |
+| GET | `/` | `{"service":"video-downloader-api","status":"running"}` |
 
 `cookies` is `true` only when the jar is actually **usable**. `cookies_detail`
 says why not: `ok`, `missing`, `empty`, `no-entries`, `not-netscape-format`.
 Deployment creates an empty `cookies.txt` for the docker bind mount, so `empty`
 is the normal starting state and only affects login-gated sources.
-| GET | `/api/delete-video?url=<file_url>` | Deletes a converted file before its TTL |
-| GET | `/downloads/<filename>` | Static serving of converted files |
-| GET | `/` | `{"service":"video-downloader-api","status":"running"}` |
 
 ## Client notes
 

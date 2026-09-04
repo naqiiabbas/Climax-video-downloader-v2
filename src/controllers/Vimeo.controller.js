@@ -7,6 +7,7 @@ import { config } from "../config.js";
 import { computeNeedsMerge } from "../utils/media.js";
 import { mergeToMp4, publicDownloadUrl, MergeError } from "../utils/mergeDownload.js";
 import { parseQuality } from "../utils/quality.js";
+import { allEntriesAreDrm, DRM_MESSAGE, DRM_CODE } from "../utils/drm.js";
 
 const ytdlp = config.ytdlpPath;
 const USER_AGENT =
@@ -386,8 +387,21 @@ export const FetchVimeo = async (req, res) => {
     let needsMerge = computeNeedsMerge(finalMedia);
     let autoConverted = false;
     let autoConvertError = null;
+    let autoConvertErrorCode = null;
+    let autoConvertErrorDetails = null;
 
-    if (!rawRequested && !ready && config.autoConvert) {
+    // Vimeo now serves FairPlay/Widevine CBCS streams for some videos, with no
+    // progressive mp4 alongside — every route is encrypted. yt-dlp reads the
+    // manifest fine (media[] comes back full of resolutions and sizes) but
+    // cannot decrypt the segments. Detected from the CDN URLs so we skip a
+    // download that is guaranteed to fail rather than spending a minute
+    // discovering it.
+    const drm = allEntriesAreDrm(finalMedia);
+
+    if (!rawRequested && !ready && drm) {
+      autoConvertError = DRM_MESSAGE;
+      autoConvertErrorCode = DRM_CODE;
+    } else if (!rawRequested && !ready && config.autoConvert) {
       const quality = parseQuality(req.query.quality, config.defaultQuality) || config.defaultQuality;
       try {
         // mergeToMp4 rewrites vimeo.com URLs to player.vimeo.com internally
@@ -414,8 +428,19 @@ export const FetchVimeo = async (req, res) => {
       } catch (err) {
         // Degrade rather than fail the whole request: hand back the raw m3u8
         // list (still usable via /api/downloads/mp4) instead of a hard 500.
+        //
+        // Keep err.details. Dropping it is what made a DRM failure look like a
+        // generic server fault: the real yt-dlp message never left the box, and
+        // `debug` only appears when media[] is empty, which it is not here.
         console.error("Vimeo auto-convert failed:", err);
-        autoConvertError = err instanceof MergeError ? err.message : "Conversion failed";
+        if (err instanceof MergeError) {
+          autoConvertError = err.message;
+          autoConvertErrorCode = err.code;
+          autoConvertErrorDetails = err.details || null;
+        } else {
+          autoConvertError = "Conversion failed";
+          autoConvertErrorCode = "conversion_failed";
+        }
       }
     }
 
@@ -429,7 +454,16 @@ export const FetchVimeo = async (req, res) => {
       needs_merge: needsMerge,
       media: responseMedia,
       auto_converted: autoConverted,
+      // `drm_protected` is the flag the mobile client should branch on: the
+      // entries in media[] are real and well-formed, they are just encrypted,
+      // so nothing — not /api/downloads/mp4, not /api/downloads/prepare — can
+      // turn them into a playable file.
+      drm_protected: drm,
       ...(autoConvertError ? { auto_convert_error: autoConvertError } : {}),
+      ...(autoConvertErrorCode ? { error_code: autoConvertErrorCode } : {}),
+      ...(autoConvertErrorDetails
+        ? { auto_convert_error_details: autoConvertErrorDetails }
+        : {}),
       format_preference: mp4Media.length > 0 ? 'mp4_only' : 'all_formats',
       ...(responseMedia.length === 0 ? {
         debug: {
@@ -438,6 +472,16 @@ export const FetchVimeo = async (req, res) => {
         },
       } : {}),
     };
+
+    // 200 whenever the client got something it can act on: a converted mp4, a
+    // directly usable entry, or the raw list it explicitly asked for. Only a
+    // genuinely unusable result gets an error status — 422 for DRM (the
+    // request was fine, the content cannot be delivered), 502 when extraction
+    // returned nothing at all. Both previously returned 200 with a body no
+    // client could do anything with.
+    const usable = autoConverted || rawRequested || Boolean(ready);
+    if (!usable && drm) return res.status(422).json(response);
+    if (responseMedia.length === 0) return res.status(502).json(response);
 
     return res.json(response);
   } catch (err) {

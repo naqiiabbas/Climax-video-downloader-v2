@@ -4,17 +4,24 @@ import { execFile } from "child_process";
 import { config } from "../config.js";
 import { VideoCache } from "./cache.js";
 import { cookieArgList } from "./cookies.js";
+import { isDrmError, DRM_MESSAGE, DRM_CODE } from "./drm.js";
 
 if (!fs.existsSync(config.downloadsDir)) {
   fs.mkdirSync(config.downloadsDir, { recursive: true });
 }
 
 export class MergeError extends Error {
-  constructor(message, status = 500, details) {
+  /**
+   * `code` is a stable, machine-readable reason the client can branch on:
+   * "drm_protected", "download_timeout", "download_failed", "no_output",
+   * "cache_failed". The human `message` is free to be reworded; `code` is not.
+   */
+  constructor(message, status = 500, details, code = "download_failed") {
     super(message);
     this.name = "MergeError";
     this.status = status;
     this.details = details;
+    this.code = code;
   }
 }
 
@@ -103,11 +110,22 @@ export function mergeToMp4(pageUrl, quality = config.defaultQuality, { extraArgs
         if (error) {
           console.error("Merge download failed:", stderr || error.message);
           const killed = Boolean(error.killed || error.signal);
+          const details = String(stderr || error.message).slice(0, 500);
+
+          // DRM is not a transient failure — retrying, lowering the quality or
+          // updating yt-dlp will never help, because the segments need a
+          // licence server. Say so explicitly instead of returning the generic
+          // "Download failed" that sent us hunting for a server-side fault.
+          if (!killed && isDrmError(details)) {
+            return reject(new MergeError(DRM_MESSAGE, 422, details, DRM_CODE));
+          }
+
           return reject(
             new MergeError(
               killed ? "Download timed out" : "Download failed",
               killed ? 504 : 500,
-              String(stderr || error.message).slice(0, 500)
+              details,
+              killed ? "download_timeout" : "download_failed"
             )
           );
         }
@@ -119,14 +137,15 @@ export function mergeToMp4(pageUrl, quality = config.defaultQuality, { extraArgs
             new MergeError(
               "Download produced no file",
               500,
-              String(stdout || stderr).slice(0, 500)
+              String(stdout || stderr).slice(0, 500),
+              "no_output"
             )
           );
         }
 
         const cacheKey = path.basename(produced);
         if (!VideoCache.setVideo(cacheKey, produced)) {
-          return reject(new MergeError("Failed to cache video", 500));
+          return reject(new MergeError("Failed to cache video", 500, undefined, "cache_failed"));
         }
 
         let sizeBytes = null;

@@ -26,6 +26,9 @@ jobs:
           done
         shell: bash
 
+      - name: Unit tests
+        run: npm test
+
       - name: Boot the server and probe /api/health
         env:
           API_KEY: ci-test-key

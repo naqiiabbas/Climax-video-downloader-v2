@@ -4,6 +4,7 @@ import { buildResponse, formatFileSize } from "../utils/media.js";
 import { cookieArgString } from "../utils/cookies.js";
 import { mergeToMp4, publicDownloadUrl, MergeError } from "../utils/mergeDownload.js";
 import { parseQuality } from "../utils/quality.js";
+import { allEntriesAreDrm, DRM_MESSAGE, DRM_CODE } from "../utils/drm.js";
 
 const ytdlp = config.ytdlpPath;
 
@@ -53,7 +54,13 @@ export const DalyMotionAndPainternst = async (req, res) => {
     // /api/downloads/mp4 instead of committing to one quality up front.
     const ready = response.media.find(isReadyToDownload);
 
-    if (!isRawRequested(req) && !ready && config.autoConvert) {
+    // Skip a download that cannot possibly succeed — see utils/drm.js.
+    const drm = allEntriesAreDrm(response.media);
+
+    if (!isRawRequested(req) && !ready && drm) {
+      response.auto_convert_error = DRM_MESSAGE;
+      response.error_code = DRM_CODE;
+    } else if (!isRawRequested(req) && !ready && config.autoConvert) {
       const quality = parseQuality(req.query.quality, config.defaultQuality) || config.defaultQuality;
       try {
         const { cacheKey, sizeBytes } = await mergeToMp4(url, quality);
@@ -78,10 +85,28 @@ export const DalyMotionAndPainternst = async (req, res) => {
       } catch (err) {
         // Degrade rather than fail the whole request: hand back the raw HLS
         // list (still usable via /api/downloads/mp4) instead of a hard 500.
+        //
+        // Keep err.details — dropping it left "Download failed" as the only
+        // thing the caller ever saw, which is not enough to tell a DRM wall
+        // from a transient extractor fault.
         console.error("Dailymotion auto-convert failed:", err);
-        response.auto_convert_error =
-          err instanceof MergeError ? err.message : "Conversion failed";
+        if (err instanceof MergeError) {
+          response.auto_convert_error = err.message;
+          response.error_code = err.code;
+          if (err.details) response.auto_convert_error_details = err.details;
+        } else {
+          response.auto_convert_error = "Conversion failed";
+          response.error_code = "conversion_failed";
+        }
       }
+    }
+
+    response.drm_protected = drm;
+
+    // Only a genuinely unusable result gets an error status: the request was
+    // valid, the content just cannot be delivered.
+    if (drm && !response.auto_converted && !isRawRequested(req)) {
+      return res.status(422).json(response);
     }
 
     res.json(response);
