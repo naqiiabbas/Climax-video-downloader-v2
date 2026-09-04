@@ -3,6 +3,8 @@ import path from "path";
 import { config } from "../config.js";
 import { VideoCache } from "../utils/cache.js";
 import { cookieStatus } from "../utils/cookies.js";
+import { formatFileSize } from "../utils/media.js";
+import { publicDownloadUrl } from "../utils/mergeDownload.js";
 
 /**
  * Replaces cookies.txt, which yt-dlp uses to reach login-gated content
@@ -126,4 +128,114 @@ export const Health = (_req, res) => {
     cachedVideos: VideoCache.getAllVideos().length,
     timestamp: new Date().toISOString(),
   });
+};
+
+/**
+ * GET /api/status — what converted files are on disk, how much space they take
+ * and when each one goes away.
+ *
+ * Reads the DIRECTORY, not just the cache, and that distinction is the point.
+ * VideoCache is in-memory and its TTL handler is what deletes files, but
+ * ./downloads is a bind mount that outlives the container. So every restart
+ * strands the files it was tracking: they stay on disk with no deletion
+ * scheduled, forever. Listing only the cache would report a tidy server while
+ * the disk fills up. Anything on disk the cache does not know about is reported
+ * with `auto_delete: false` and counted in `orphaned_*`.
+ */
+export const Status = async (req, res) => {
+  try {
+    let names;
+    try {
+      names = await fs.promises.readdir(config.downloadsDir);
+    } catch (err) {
+      if (err.code === "ENOENT") names = []; // nothing downloaded yet
+      else throw err;
+    }
+
+    const now = Date.now();
+    const videos = [];
+    let totalBytes = 0;
+    let orphanedBytes = 0;
+
+    for (const name of names) {
+      const filePath = path.join(config.downloadsDir, name);
+
+      let stat;
+      try {
+        stat = await fs.promises.stat(filePath);
+      } catch {
+        continue; // deleted between readdir and stat — a TTL expiry racing us
+      }
+      if (!stat.isFile()) continue;
+
+      const expiryMs = VideoCache.getExpiry(name);
+      const tracked = expiryMs !== null;
+
+      totalBytes += stat.size;
+      if (!tracked) orphanedBytes += stat.size;
+
+      videos.push({
+        key: name,
+        file_url: publicDownloadUrl(req, name),
+        extension: path.extname(name).replace(/^\./, "") || null,
+        size_bytes: stat.size,
+        size: formatFileSize(stat.size),
+        created_at: stat.mtime.toISOString(),
+        expires_at: tracked ? new Date(expiryMs).toISOString() : null,
+        // Negative would mean the sweep has not fired yet; floor at 0 so the
+        // client never renders "expires in -12s".
+        expires_in_seconds: tracked ? Math.max(0, Math.round((expiryMs - now) / 1000)) : null,
+        auto_delete: tracked,
+      });
+    }
+
+    // Soonest deletion first, so "what disappears next" is at the top.
+    // Orphans never expire, so they sort last.
+    videos.sort((a, b) => {
+      if (a.expires_at && b.expires_at) return a.expires_in_seconds - b.expires_in_seconds;
+      if (a.expires_at) return -1;
+      if (b.expires_at) return 1;
+      return a.created_at.localeCompare(b.created_at);
+    });
+
+    const orphanedCount = videos.filter((v) => !v.auto_delete).length;
+
+    // Free space on the volume holding ./downloads. This box also runs Postgres
+    // and MinIO, so "how much room is left" matters as much as "how much am I
+    // using". Best-effort: statfs is not available everywhere.
+    let disk = null;
+    try {
+      const fsStat = await fs.promises.statfs(config.downloadsDir);
+      const freeBytes = fsStat.bsize * fsStat.bavail;
+      const totalDiskBytes = fsStat.bsize * fsStat.blocks;
+      disk = {
+        free_bytes: freeBytes,
+        free: formatFileSize(freeBytes),
+        total_bytes: totalDiskBytes,
+        total: formatFileSize(totalDiskBytes),
+        used_percent: totalDiskBytes
+          ? Math.round(((totalDiskBytes - freeBytes) / totalDiskBytes) * 100)
+          : null,
+      };
+    } catch {
+      // Informational only; never fail the request over it.
+    }
+
+    res.json({
+      success: true,
+      count: videos.length,
+      total_size_bytes: totalBytes,
+      total_size: formatFileSize(totalBytes) || "0 B",
+      cache_ttl_seconds: config.cacheTtlSeconds,
+      orphaned_count: orphanedCount,
+      orphaned_size_bytes: orphanedBytes,
+      orphaned_size: formatFileSize(orphanedBytes) || "0 B",
+      disk,
+      generated_at: new Date().toISOString(),
+      videos,
+    });
+  } catch (err) {
+    console.error("Status error:", err);
+    res.status(500).json({ success: false, error: "Failed to read download status" });
+  }
 };

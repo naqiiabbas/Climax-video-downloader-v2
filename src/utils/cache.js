@@ -59,6 +59,21 @@ export const VideoCache = {
   },
 
   getAllVideos: () => cache.keys(),
+
+  /**
+   * When `key` is due for deletion, as an epoch-ms timestamp, or null when the
+   * cache is not tracking it.
+   *
+   * node-cache distinguishes three states that all have to be separated here:
+   * `undefined` for an unknown key, `0` for a key with no TTL (never expires),
+   * and a timestamp otherwise. Both of the first two mean "no deletion is
+   * scheduled" — which for a file already on disk means it will sit there
+   * forever, so /api/status has to be able to say so.
+   */
+  getExpiry: (key) => {
+    const ttl = cache.getTtl(key);
+    return ttl ? ttl : null;
+  },
 };
 
 export default cache;

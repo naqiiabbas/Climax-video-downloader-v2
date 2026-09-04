@@ -7,22 +7,41 @@
   "auth": {
     "type": "apikey",
     "apikey": [
-      { "key": "key", "value": "x-api-key", "type": "string" },
-      { "key": "value", "value": "{{ApiKey}}", "type": "string" },
-      { "key": "in", "value": "header", "type": "string" }
+      {
+        "key": "key",
+        "value": "x-api-key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{ApiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
     ]
   },
   "item": [
     {
       "name": "Health",
       "request": {
-        "auth": { "type": "noauth" },
+        "auth": {
+          "type": "noauth"
+        },
         "method": "GET",
         "header": [],
         "url": {
           "raw": "{{BaseUrl}}/api/health",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "health"]
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
         },
         "description": "Open probe. No API key required."
       },
@@ -35,8 +54,13 @@
         "header": [],
         "url": {
           "raw": "{{BaseUrl}}/api/download?url=https://www.facebook.com/reel/2397894710684126",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "download"],
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "download"
+          ],
           "query": [
             {
               "key": "url",
@@ -55,8 +79,13 @@
         "header": [],
         "url": {
           "raw": "{{BaseUrl}}/api/tiktok?url=https://www.tiktok.com/@animevibestudi0/video/7612666558460087559",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "tiktok"],
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "tiktok"
+          ],
           "query": [
             {
               "key": "url",
@@ -75,10 +104,18 @@
         "header": [],
         "url": {
           "raw": "{{BaseUrl}}/api/instagram?url=https://www.instagram.com/reel/REEL_ID/",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "instagram"],
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "instagram"
+          ],
           "query": [
-            { "key": "url", "value": "https://www.instagram.com/reel/REEL_ID/" }
+            {
+              "key": "url",
+              "value": "https://www.instagram.com/reel/REEL_ID/"
+            }
           ]
         },
         "description": "Requires a valid cookies.txt on the server (see Update cookies)."
@@ -92,11 +129,23 @@
         "header": [],
         "url": {
           "raw": "{{BaseUrl}}/api/vimeo?url=https://vimeo.com/1160592223&quality=480",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "vimeo"],
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "vimeo"
+          ],
           "query": [
-            { "key": "url", "value": "https://vimeo.com/1160592223" },
-            { "key": "quality", "value": "480", "description": "best|2160|1440|1080|720|480|360|240 — lower is faster" }
+            {
+              "key": "url",
+              "value": "https://vimeo.com/1160592223"
+            },
+            {
+              "key": "quality",
+              "value": "480",
+              "description": "best|2160|1440|1080|720|480|360|240 — lower is faster"
+            }
           ]
         },
         "description": "Vimeo is HLS-only, so by default this downloads and remuxes server-side and returns one ready mp4 (needs_merge:false, auto_converted:true) — a real download, not a metadata probe (measured 5-172s). Set Postman's request timeout well above default. Add &raw=1 for the old fast, metadata-only, per-quality m3u8 list."
@@ -110,11 +159,22 @@
         "header": [],
         "url": {
           "raw": "{{BaseUrl}}/api/vimeo?url=https://vimeo.com/1160592223&raw=1",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "vimeo"],
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "vimeo"
+          ],
           "query": [
-            { "key": "url", "value": "https://vimeo.com/1160592223" },
-            { "key": "raw", "value": "1" }
+            {
+              "key": "url",
+              "value": "https://vimeo.com/1160592223"
+            },
+            {
+              "key": "raw",
+              "value": "1"
+            }
           ]
         },
         "description": "Old behavior: fast, metadata-only, every entry needs_conversion=true. Feed one to Downloads / HLS to MP4 yourself if you want a client-driven quality picker instead of the server's automatic choice."
@@ -128,8 +188,13 @@
         "header": [],
         "url": {
           "raw": "{{BaseUrl}}/api/dailymotion?url=https://www.dailymotion.com/video/xa1c774",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "dailymotion"],
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "dailymotion"
+          ],
           "query": [
             {
               "key": "url",
@@ -148,11 +213,41 @@
         "header": [],
         "url": {
           "raw": "{{BaseUrl}}/api/downloads/mp4?url={{HlsUrl}}",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "downloads", "mp4"],
-          "query": [{ "key": "url", "value": "{{HlsUrl}}" }]
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "downloads",
+            "mp4"
+          ],
+          "query": [
+            {
+              "key": "url",
+              "value": "{{HlsUrl}}"
+            }
+          ]
         },
         "description": "Takes an m3u8 URL from a media entry with needs_conversion=true, remuxes it to mp4 and returns { file_url, key, expires_in }. Fetch file_url directly — it needs no API key and is deleted when the TTL expires."
+      },
+      "response": []
+    },
+    {
+      "name": "Storage status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/status",
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "status"
+          ]
+        },
+        "description": "Converted files on disk: count, total size, and when each is deleted (soonest first). Requires x-api-key.\n\nauto_delete:false / orphaned_count > 0 means files the in-memory cache is no longer tracking — every container restart strands the files it was tracking, and those are never removed automatically. Clear them with Delete video or rm on the host.\n\n`disk` reports free space on the volume holding DOWNLOADS_DIR, which on the VPS is shared with Postgres and MinIO."
       },
       "response": []
     },
@@ -163,9 +258,19 @@
         "header": [],
         "url": {
           "raw": "{{BaseUrl}}/api/delete-video?url={{FileUrl}}",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "delete-video"],
-          "query": [{ "key": "url", "value": "{{FileUrl}}" }]
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "delete-video"
+          ],
+          "query": [
+            {
+              "key": "url",
+              "value": "{{FileUrl}}"
+            }
+          ]
         },
         "description": "Removes a converted file ahead of its TTL."
       },
@@ -189,8 +294,13 @@
         },
         "url": {
           "raw": "{{BaseUrl}}/api/update-cookies",
-          "host": ["{{BaseUrl}}"],
-          "path": ["api", "update-cookies"]
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "update-cookies"
+          ]
         },
         "description": "Replaces the server's cookies.txt, used for Instagram and other login-gated sources."
       },
@@ -198,9 +308,25 @@
     }
   ],
   "variable": [
-    { "key": "BaseUrl", "value": "http://localhost:8000", "type": "default" },
-    { "key": "ApiKey", "value": "", "type": "default" },
-    { "key": "HlsUrl", "value": "", "type": "default" },
-    { "key": "FileUrl", "value": "", "type": "default" }
+    {
+      "key": "BaseUrl",
+      "value": "http://localhost:8000",
+      "type": "default"
+    },
+    {
+      "key": "ApiKey",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "HlsUrl",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "FileUrl",
+      "value": "",
+      "type": "default"
+    }
   ]
 }

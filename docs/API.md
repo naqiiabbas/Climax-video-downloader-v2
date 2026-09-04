@@ -325,6 +325,7 @@ deleted automatically when the TTL expires.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/health` | **Open.** `{status, uptime, cookies, cookies_detail, cachedVideos, timestamp}` |
+| GET | `/api/status` | **Requires `x-api-key`.** Converted files on disk, their size and deletion times |
 | POST | `/api/update-cookies` | Multipart, field `file`. Max 5 MB, `.txt` + `text/plain`, must be Netscape format |
 | GET | `/api/delete-video?url=<file_url>` | Deletes a converted file before its TTL |
 | GET | `/downloads/<filename>` | Static serving of converted files |
@@ -353,3 +354,76 @@ is the normal starting state and only affects login-gated sources.
   cookies.txt improves this further. A 500 here is worth one client-side retry.
 - **Pick a format client-side** from the `media` array rather than assuming
   index 0 — availability varies per source.
+
+## Storage status
+
+| Method | Path |
+|---|---|
+| GET | `/api/status` |
+
+Requires `x-api-key` (or `Authorization: Bearer`). What converted files are on
+disk right now, how much space they take, and when each is deleted.
+
+```json
+{
+  "success": true,
+  "count": 2,
+  "total_size_bytes": 79931902,
+  "total_size": "76.23 MB",
+  "cache_ttl_seconds": 3600,
+  "orphaned_count": 1,
+  "orphaned_size_bytes": 12497303,
+  "orphaned_size": "11.92 MB",
+  "disk": {
+    "free_bytes": 227133972480, "free": "211.53 GB",
+    "total_bytes": 511241613312, "total": "476.13 GB",
+    "used_percent": 56
+  },
+  "generated_at": "2026-09-04T08:33:06.118Z",
+  "videos": [
+    {
+      "key": "video_1788509674495.mp4",
+      "file_url": "https://your-domain/downloads/video_1788509674495.mp4",
+      "extension": "mp4",
+      "size_bytes": 67434599,
+      "size": "64.31 MB",
+      "created_at": "2026-09-04T08:14:38.000Z",
+      "expires_at": "2026-09-04T09:14:38.000Z",
+      "expires_in_seconds": 2674,
+      "auto_delete": true
+    }
+  ]
+}
+```
+
+Files are listed **soonest deletion first**, so the top of `videos` is what
+disappears next. Orphans sort last.
+
+### `auto_delete: false` — files that will never be removed
+
+This reads the **directory**, not just the cache, and that distinction is the
+whole point.
+
+`VideoCache` is in-memory and its TTL handler is what deletes files, but
+`./downloads` is a bind mount that outlives the container. **Every restart
+strands the files it was tracking**: they stay on disk with no deletion
+scheduled, forever. Listing only the cache would report a tidy server while the
+disk fills up.
+
+So anything on disk the cache does not know about is reported with
+`expires_at: null` and `auto_delete: false`, and counted in `orphaned_count`
+/ `orphaned_size_bytes`. A non-zero `orphaned_count` right after a deploy is
+expected and means exactly that. Clear them with `/api/delete-video`, or
+`rm` them on the host.
+
+A stray `.ts` file is worth noticing too: `/api/downloads/mp4` writes an
+intermediate transport stream and does not remove it if the download errors,
+so those leak the same way.
+
+`disk` is best-effort — it is omitted (`null`) on platforms where `statfs`
+is unavailable. It reports the volume holding `DOWNLOADS_DIR`, which on the
+VPS is shared with Postgres and MinIO.
+
+Note this endpoint is **gated** while `/api/health` is open: it lists every
+cached file's name, and those names are the only unguessable part of the
+open `/downloads/<file>` URLs.
