@@ -74,6 +74,15 @@ export const VideoCache = {
     const ttl = cache.getTtl(key);
     return ttl ? ttl : null;
   },
+
+  /**
+   * Drops every entry without touching the filesystem.
+   *
+   * Safe to call after deleting the files yourself: node-cache emits "flush"
+   * here, not "expired", so the unlink handler above does not fire and there is
+   * no second delete racing a filename that may have been reused.
+   */
+  flush: () => cache.flushAll(),
 };
 
 export default cache;

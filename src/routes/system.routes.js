@@ -1,6 +1,12 @@
 import express from "express";
 import multer from "multer";
-import { UpdateCookies, DeleteVideo, Health, Status } from "../controllers/system.controller.js";
+import {
+  UpdateCookies,
+  DeleteVideo,
+  Health,
+  Status,
+  ClearServer,
+} from "../controllers/system.controller.js";
 import { verifyStrongKey } from "../middleware/apiAuth.js";
 
 const upload = multer({
@@ -19,5 +25,10 @@ SystemRoutes.get("/status", verifyStrongKey, Status);
 
 SystemRoutes.post("/update-cookies", verifyStrongKey, upload.single("file"), UpdateCookies);
 SystemRoutes.get("/delete-video", verifyStrongKey, DeleteVideo);
+
+// DELETE, not GET: this wipes every converted file, and a GET can be fired by a
+// prefetch or a stray click. /api/delete-video stays a GET because a mistake
+// there costs one named file.
+SystemRoutes.delete("/clear-server", verifyStrongKey, ClearServer);
 
 export default SystemRoutes;

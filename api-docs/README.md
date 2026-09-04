@@ -57,6 +57,7 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 | 11 | GET | `/api/delete-video` | ✅ Working | |
 | 12 | POST | `/api/update-cookies` | ✅ Working | Admin only |
 | 12b | GET | `/api/status` | ✅ Working | Files on disk, sizes, deletion times. Admin/ops |
+| 12c | DELETE | `/api/clear-server` | ✅ Working | Deletes every converted file now. **DELETE only** — GET/POST 404. Admin/ops |
 | 13 | GET | `/api/history/status` | ✅ Working | Is history configured? |
 | 14 | GET | `/api/history` | ⚙️ Needs setup | Caller's own history |
 | 15 | POST | `/api/history` | ⚙️ Needs setup | Record a download |

@@ -326,6 +326,7 @@ deleted automatically when the TTL expires.
 |---|---|---|
 | GET | `/api/health` | **Open.** `{status, uptime, cookies, cookies_detail, cachedVideos, timestamp}` |
 | GET | `/api/status` | **Requires `x-api-key`.** Converted files on disk, their size and deletion times |
+| DELETE | `/api/clear-server` | **Requires `x-api-key`. DELETE, not GET.** Removes every converted file immediately |
 | POST | `/api/update-cookies` | Multipart, field `file`. Max 5 MB, `.txt` + `text/plain`, must be Netscape format |
 | GET | `/api/delete-video?url=<file_url>` | Deletes a converted file before its TTL |
 | GET | `/downloads/<filename>` | Static serving of converted files |
@@ -427,3 +428,55 @@ VPS is shared with Postgres and MinIO.
 Note this endpoint is **gated** while `/api/health` is open: it lists every
 cached file's name, and those names are the only unguessable part of the
 open `/downloads/<file>` URLs.
+
+## Clearing the server
+
+| Method | Path |
+|---|---|
+| **DELETE** | `/api/clear-server` |
+
+Removes **every** converted file in `DOWNLOADS_DIR` immediately, without
+waiting for `CACHE_TTL_SECONDS`, and flushes the cache so no entry outlives
+the file it pointed at.
+
+```bash
+curl -X DELETE -H "x-api-key: $API_KEY" https://your-domain/api/clear-server
+```
+
+```json
+{
+  "success": true,
+  "deleted_count": 3,
+  "freed_bytes": 16252928,
+  "freed": "15.50 MB",
+  "failed_count": 0,
+  "deleted": [
+    { "key": "video_1788509674495.mp4", "size_bytes": 3145728, "size": "3.00 MB" }
+  ],
+  "failed": [],
+  "cleared_at": "2026-09-04T08:40:58.930Z"
+}
+```
+
+**The method is `DELETE`.** A `GET` or `POST` returns `404`. That is
+deliberate: this wipes everything, and a GET can be fired by a link prefetch, a
+crawler or a stray click in an API client. `/api/delete-video` stays a GET
+because a mistake there costs one named file.
+
+Notes:
+
+- It sweeps the **directory**, so it clears orphans — the files a restart
+  stranded, which `/api/status` reports as `auto_delete: false` — as well as
+  tracked ones. Stray `.ts` intermediates left by a failed
+  `/api/downloads/mp4` go too.
+- Never recurses into subdirectories and never follows a symlink out of
+  `DOWNLOADS_DIR`; only plain files directly inside it are unlinked.
+- Idempotent. Clearing an empty server returns `deleted_count: 0` and `200`.
+- `success` is `false` when any file could not be removed (locked, or owned by
+  another user); the status stays `200` and `failed[]` names each one with its
+  error code. Check `failed_count`, not just the status.
+- **It does not cancel in-flight work.** A conversion already running will write
+  its output after the sweep, and a client mid-download of a cleared file gets a
+  truncated transfer. Nothing is unrecoverable — every file is regenerable by
+  re-requesting it.
+- Pair it with `/api/status` to see what will go before you call it.

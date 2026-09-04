@@ -239,3 +239,81 @@ export const Status = async (req, res) => {
     res.status(500).json({ success: false, error: "Failed to read download status" });
   }
 };
+
+/**
+ * DELETE /api/clear-server — removes every converted file immediately.
+ *
+ * Registered as DELETE, not GET, deliberately. `/api/delete-video` is a GET
+ * because it takes one named file and a mistake there costs one file; this
+ * wipes everything, and a GET can be fired by a link prefetch, a crawler or a
+ * stray click in an API client. The method is the guard rail.
+ *
+ * Sweeps the DIRECTORY rather than the cache, for the same reason /api/status
+ * does: a restart strands the files the cache was tracking, and those orphans
+ * are usually the bulk of what needs clearing. The cache is flushed afterwards
+ * so its entries do not outlive the files they point at.
+ *
+ * Nothing here is precious — every file is regenerable by re-requesting it, and
+ * would have been deleted at its TTL anyway. The one real cost is breaking a
+ * download already in flight.
+ */
+export const ClearServer = async (req, res) => {
+  try {
+    let names;
+    try {
+      names = await fs.promises.readdir(config.downloadsDir);
+    } catch (err) {
+      if (err.code === "ENOENT") names = []; // nothing to clear
+      else throw err;
+    }
+
+    const deleted = [];
+    const failed = [];
+    let freedBytes = 0;
+
+    for (const name of names) {
+      // basename() so a crafted directory entry can never escape downloadsDir.
+      const filePath = path.join(config.downloadsDir, path.basename(name));
+
+      let stat;
+      try {
+        stat = await fs.promises.stat(filePath);
+      } catch {
+        continue; // vanished under us — a TTL expiry racing this sweep
+      }
+      // Only ever unlink plain files; never recurse, never follow a directory.
+      if (!stat.isFile()) continue;
+
+      try {
+        await fs.promises.unlink(filePath);
+        deleted.push({ key: name, size_bytes: stat.size, size: formatFileSize(stat.size) });
+        freedBytes += stat.size;
+      } catch (err) {
+        // A locked or root-owned file: report it rather than pretending.
+        failed.push({ key: name, error: err.code || err.message });
+      }
+    }
+
+    // Drop the now-dangling entries. Does not fire the unlink handler.
+    VideoCache.flush();
+
+    console.log(
+      `clear-server: deleted ${deleted.length} file(s), freed ${formatFileSize(freedBytes) || "0 B"}` +
+        (failed.length ? `, ${failed.length} failed` : "")
+    );
+
+    res.json({
+      success: failed.length === 0,
+      deleted_count: deleted.length,
+      freed_bytes: freedBytes,
+      freed: formatFileSize(freedBytes) || "0 B",
+      failed_count: failed.length,
+      deleted,
+      failed,
+      cleared_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("ClearServer error:", err);
+    res.status(500).json({ success: false, error: "Failed to clear downloads" });
+  }
+};

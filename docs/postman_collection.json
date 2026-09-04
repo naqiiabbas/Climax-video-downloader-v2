@@ -277,6 +277,25 @@
       "response": []
     },
     {
+      "name": "Clear server (deletes ALL videos)",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/clear-server",
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "clear-server"
+          ]
+        },
+        "description": "DESTRUCTIVE. Deletes every converted file in DOWNLOADS_DIR immediately, including orphans a restart stranded and stray .ts intermediates.\n\nThe method must be DELETE — GET and POST return 404 on purpose, so a prefetch or stray click cannot wipe the server.\n\nDoes not cancel work in flight: a conversion already running still writes its output, and a client mid-download of a cleared file gets a truncated transfer. Everything is regenerable by re-requesting it.\n\nRun Storage status first to see what will go. Check failed_count, not just the status code."
+      },
+      "response": []
+    },
+    {
       "name": "Update cookies",
       "request": {
         "method": "POST",
