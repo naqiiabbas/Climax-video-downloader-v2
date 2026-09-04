@@ -6,7 +6,7 @@ const execFileP = util.promisify(execFile);
 import { config } from "../config.js";
 import { computeNeedsMerge } from "../utils/media.js";
 import { mergeToMp4, publicDownloadUrl, MergeError } from "../utils/mergeDownload.js";
-import { parseQuality } from "../utils/quality.js";
+import { parseQuality, availableQualities } from "../utils/quality.js";
 import { allEntriesAreDrm, DRM_MESSAGE, DRM_CODE } from "../utils/drm.js";
 
 const ytdlp = config.ytdlpPath;
@@ -396,6 +396,9 @@ export const FetchVimeo = async (req, res) => {
     // cannot decrypt the segments. Detected from the CDN URLs so we skip a
     // download that is guaranteed to fail rather than spending a minute
     // discovering it.
+    // Captured before auto-conversion replaces media[] with the converted file.
+    const availableQualityList = availableQualities(finalMedia);
+
     const drm = allEntriesAreDrm(finalMedia);
 
     if (!rawRequested && !ready && drm) {
@@ -459,6 +462,7 @@ export const FetchVimeo = async (req, res) => {
       // so nothing — not /api/downloads/mp4, not /api/downloads/prepare — can
       // turn them into a playable file.
       drm_protected: drm,
+      available_qualities: availableQualityList,
       ...(autoConvertError ? { auto_convert_error: autoConvertError } : {}),
       ...(autoConvertErrorCode ? { error_code: autoConvertErrorCode } : {}),
       ...(autoConvertErrorDetails

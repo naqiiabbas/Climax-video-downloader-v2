@@ -166,6 +166,45 @@ Server-wide, this can be turned off with `AUTO_CONVERT=false` in `.env`
 (reverts both endpoints to the old always-raw behavior; `?raw=1` still works
 either way).
 
+### Choosing a quality
+
+`/api/vimeo` and `/api/dailymotion` convert to `DEFAULT_QUALITY` (1080) unless
+you say otherwise. Pass `?quality=` to pick another:
+
+```
+GET /api/dailymotion?url=<encoded>&quality=480
+```
+
+Every response — converted or raw — carries **`available_qualities`**, the
+values worth offering for that particular video, so a picker needs one request
+rather than a second `?raw=1` call:
+
+```json
+"available_qualities": [
+  { "quality": "1080", "label": "1080p", "height": 1080,
+    "size_bytes": 12497303, "size": "11.92 MB", "size_is_estimate": true },
+  { "quality": "720",  "label": "720p",  "height": 720,  "size_bytes": 6200000,  "...": "..." },
+  { "quality": "480",  "label": "480p",  "height": 480,  "size_bytes": 3100000,  "...": "..." }
+]
+```
+
+- Send **`quality`**; display **`label`**. They differ when the source publishes
+  an off-ladder height — a 380p rendition is reached with `quality=360`,
+  because yt-dlp resolves `res:` to the nearest available height.
+- Only values the endpoint accepts are listed, so every entry is safe to send.
+- The list reflects renditions the source actually published, so it never
+  offers a resolution the server cannot produce.
+- `size_bytes` estimates the **converted** file from the source's video-only
+  rendition, so the real mp4 is slightly larger once audio is merged —
+  `size_is_estimate` is always `true`. Good enough to warn "this is 12 MB"
+  before committing a phone to the download.
+- `best` is always accepted but is never listed: it has no predictable size,
+  and on a long video it is a large file and a slow conversion.
+
+Quality drives conversion time far more than length does. A 13-minute Vimeo
+video took ~4s at `quality=480` (64 MB) versus 172s at `quality=1080`
+(369 MB), measured on the production VPS.
+
 ### DRM-protected videos
 
 Vimeo has begun serving **FairPlay/Widevine-encrypted (CBCS) streams** for some

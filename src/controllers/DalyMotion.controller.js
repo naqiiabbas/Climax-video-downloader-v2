@@ -3,7 +3,7 @@ import { config } from "../config.js";
 import { buildResponse, formatFileSize } from "../utils/media.js";
 import { cookieArgString } from "../utils/cookies.js";
 import { mergeToMp4, publicDownloadUrl, MergeError } from "../utils/mergeDownload.js";
-import { parseQuality } from "../utils/quality.js";
+import { parseQuality, availableQualities } from "../utils/quality.js";
 import { allEntriesAreDrm, DRM_MESSAGE, DRM_CODE } from "../utils/drm.js";
 
 const ytdlp = config.ytdlpPath;
@@ -53,6 +53,12 @@ export const DalyMotionAndPainternst = async (req, res) => {
     // useful for a quality-picker UI that converts on demand via
     // /api/downloads/mp4 instead of committing to one quality up front.
     const ready = response.media.find(isReadyToDownload);
+
+    // Captured before auto-conversion replaces media[] with the single
+    // converted file, which would otherwise destroy the only record of what
+    // else the source offers. Lets the app show a quality picker without a
+    // second ?raw=1 call.
+    response.available_qualities = availableQualities(response.media);
 
     // Skip a download that cannot possibly succeed — see utils/drm.js.
     const drm = allEntriesAreDrm(response.media);
