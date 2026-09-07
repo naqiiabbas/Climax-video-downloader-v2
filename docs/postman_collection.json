@@ -123,7 +123,32 @@
       "response": []
     },
     {
-      "name": "Vimeo (auto-converts, slow)",
+      "name": "Vimeo - step 1: list qualities",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/vimeo?url=https://vimeo.com/1160592223",
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "vimeo"
+          ],
+          "query": [
+            {
+              "key": "url",
+              "value": "https://vimeo.com/1160592223"
+            }
+          ]
+        },
+        "description": "Step 1 of 2. No `quality` param, so this returns metadata + available_qualities and NO media array. Metadata probe only: nothing is downloaded, answers in seconds.\n\nrequires_quality:true means show a picker, then call step 2 with the chosen value."
+      },
+      "response": []
+    },
+    {
+      "name": "Vimeo - step 2: convert at a quality",
       "request": {
         "method": "GET",
         "header": [],
@@ -144,11 +169,11 @@
             {
               "key": "quality",
               "value": "480",
-              "description": "best|2160|1440|1080|720|480|360|240 — lower is faster"
+              "description": "REQUIRED to get a file. best|1080|720|480|360|240 — nothing above 1080p"
             }
           ]
         },
-        "description": "Vimeo is HLS-only, so by default this downloads and remuxes server-side and returns one ready mp4 (needs_merge:false, auto_converted:true) — a real download, not a metadata probe (measured 5-172s). Set Postman's request timeout well above default. Add &raw=1 for the old fast, metadata-only, per-quality m3u8 list."
+        "description": "Step 2 of 2. With `quality`, returns media[] with one ready mp4 and NO available_qualities.\n\nThis is a real download — set Postman's request timeout to 300000ms. A 13-minute Vimeo at 240p measured 159s.\n\nAn invalid quality (2160, 1440, 999) returns 400 immediately."
       },
       "response": []
     },
@@ -182,7 +207,7 @@
       "response": []
     },
     {
-      "name": "Dailymotion / Pinterest (auto-converts)",
+      "name": "Dailymotion - step 1: list qualities",
       "request": {
         "method": "GET",
         "header": [],
@@ -202,7 +227,37 @@
             }
           ]
         },
-        "description": "Dailymotion is HLS-only, so by default this downloads and remuxes server-side and returns one ready mp4 (needs_merge:false, auto_converted:true), typically ~10s. Add &raw=1 for the old per-quality m3u8 list (every entry had needs_conversion=true despite extension:mp4)."
+        "description": "Step 1 of 2. No `quality` param, so this returns metadata + available_qualities and NO media array. Nothing is downloaded.\n\nAlso handles Pinterest."
+      },
+      "response": []
+    },
+    {
+      "name": "Dailymotion - step 2: convert at a quality",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BaseUrl}}/api/dailymotion?url=https://www.dailymotion.com/video/xa1c774&quality=480",
+          "host": [
+            "{{BaseUrl}}"
+          ],
+          "path": [
+            "api",
+            "dailymotion"
+          ],
+          "query": [
+            {
+              "key": "url",
+              "value": "https://www.dailymotion.com/video/xa1c774"
+            },
+            {
+              "key": "quality",
+              "value": "480",
+              "description": "REQUIRED to get a file. best|1080|720|480|360|240 — nothing above 1080p"
+            }
+          ]
+        },
+        "description": "Step 2 of 2. With `quality`, returns media[] with one ready mp4 and NO available_qualities. Measured 14s at 480p for a 51-second clip."
       },
       "response": []
     },

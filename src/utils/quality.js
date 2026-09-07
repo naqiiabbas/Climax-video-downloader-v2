@@ -1,18 +1,37 @@
 /**
- * Shared between /api/downloads/prepare and the auto-conversion Vimeo and
- * Dailymotion run internally, so both accept exactly the same `quality`
- * values and validation cannot drift between them.
+ * Shared between /api/downloads/prepare and the conversion /api/vimeo and
+ * /api/dailymotion run, so both accept exactly the same `quality` values and
+ * validation cannot drift between them.
  */
+
+/**
+ * Nothing above 1080p is served. 1440p and 2160p were removed rather than
+ * merely discouraged: a 4K merge is ~230MB of disk and bandwidth per request
+ * on a box that also hosts Postgres and MinIO, and no mobile client benefits
+ * from it. Enforced in three places that must agree — this set (what is
+ * accepted), the ladder below (what is offered), and mergeToMp4's format
+ * selector (what is actually downloaded).
+ */
+export const MAX_QUALITY = "1080";
+export const MAX_HEIGHT = 1080;
+
 export const ALLOWED_QUALITIES = new Set([
   "best",
-  "2160",
-  "1440",
   "1080",
   "720",
   "480",
   "360",
   "240",
 ]);
+
+/**
+ * The height cap to hand yt-dlp. "best" is still accepted so existing clients
+ * keep working, but it now means "the best at or below 1080p" — it can no
+ * longer reach 4K.
+ */
+export function qualityCap(quality) {
+  return quality === "best" ? MAX_QUALITY : String(quality);
+}
 
 /** Returns the validated quality string, or null if it is not one of the allowed values. */
 export function parseQuality(raw, fallback) {
@@ -21,7 +40,7 @@ export function parseQuality(raw, fallback) {
 }
 
 /** Descending, so the nearest-match search below prefers the taller rendition on a tie. */
-const QUALITY_LADDER = ["2160", "1440", "1080", "720", "480", "360", "240"];
+const QUALITY_LADDER = ["1080", "720", "480", "360", "240"];
 
 /** Height from a media entry's quality label ("1080p" -> 1080). */
 function heightOf(entry) {
@@ -70,6 +89,10 @@ export function availableQualities(media) {
     if (!entry?.has_video) continue;
     const height = heightOf(entry);
     if (!height) continue;
+    // Never offer what the server will not serve. A source that publishes
+    // nothing at or below 1080p yields an empty list, which is the honest
+    // answer rather than a 1440p option the cap would refuse.
+    if (height > MAX_HEIGHT) continue;
 
     const quality = nearestLadderValue(height);
     const existing = byLadder.get(quality);

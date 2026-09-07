@@ -49,8 +49,8 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 | 3 | GET | `/api/download` | ✅ Working | Universal (Facebook, YouTube, X, Reddit…) |
 | 4 | GET | `/api/tiktok` | ⚠️ Working, slow | 5–20s, retries internally |
 | 5 | GET | `/api/instagram` | ❌ **Not working** | Needs a valid `cookies.txt` |
-| 6 | GET | `/api/vimeo` | ⚠️ Working, but **DRM-blocked on some videos** | Slow (5–170s+); `?raw=1`/`?quality=` available. See [DRM](#drm-protected-videos-vimeo) |
-| 7 | GET | `/api/dailymotion` | ✅ Working, auto-converts | Also handles Pinterest; same params as Vimeo |
+| 6 | GET | `/api/vimeo` | ✅ Two-phase | No `quality` → `available_qualities`, no media. With `quality` → one mp4. Max 1080p |
+| 7 | GET | `/api/dailymotion` | ✅ Two-phase | Same as Vimeo; also handles Pinterest |
 | 8 | GET | `/api/downloads/mp4` | ✅ Working | HLS → MP4 |
 | 9 | GET | `/api/downloads/prepare` | ✅ Working | Download + merge video/audio → MP4 |
 | 10 | GET | `/downloads/<file>` | ✅ Working | Serves converted files, no key |
@@ -77,8 +77,8 @@ IP turned out not to hurt — nothing was bot-blocked, and TikTok was markedly
 | YouTube | `/api/download` | ✅ 2.9s, 14 formats | `needs_merge` → **prepare** |
 | Facebook | `/api/download` | ✅ 2.9s, 5 formats | 2 direct downloads |
 | TikTok | `/api/tiktok` | ✅ 2.3s, 4 formats | 3 direct downloads |
-| Vimeo | `/api/vimeo` | ⚠️ auto-converts when not DRM'd (5–170s+) | ready to download, **or 422 `drm_protected`** |
-| Dailymotion | `/api/dailymotion` | ✅ auto-converts to mp4 (~11s) | ready to download |
+| Vimeo | `/api/vimeo` | ✅ two-phase, mp4 on `?quality=` | pick a quality, then download |
+| Dailymotion | `/api/dailymotion` | ✅ two-phase, mp4 on `?quality=` | pick a quality, then download |
 | Instagram | `/api/instagram` | ❌ Needs a cookies.txt upload | — |
 | Pinterest, Reddit, X, Twitch | `/api/download` | ❓ Untested — sample URLs were dead links | — |
 
@@ -142,6 +142,59 @@ broken endpoint, and re-check if the rate of DRM'd videos climbs.
 Note this is distinct from the **401** case (e.g. `1071084785`): that video is
 publicly viewable but embed-restricted by its owner, so extraction itself fails
 and `media[]` comes back empty with a 502.
+
+---
+
+## Vimeo and Dailymotion: two calls, not one
+
+**Changed 2026-09-07 — this is a breaking change for the mobile app.**
+
+```
+GET /api/dailymotion?url=...              -> available_qualities, NO media
+GET /api/dailymotion?url=...&quality=480  -> media[one mp4], NO available_qualities
+```
+
+Previously a bare `?url=` converted at 1080p and returned `media`. It no
+longer downloads anything without an explicit `quality`, so **a client that
+reads `media[0]` from a bare request now gets `undefined`.**
+
+Branch on `requires_quality`:
+
+```js
+const r = await fetch(`${BASE}/api/dailymotion?url=${encodeURIComponent(u)}`,
+                      { headers: { 'x-api-key': KEY } });      // fast, seconds
+const j = await r.json();
+
+if (j.requires_quality) {
+  const choice = await showPicker(j.available_qualities);      // {quality,label,size}
+  const c = await fetch(`${BASE}/api/dailymotion?url=${encodeURIComponent(u)}&quality=${choice.quality}`,
+                        { headers: { 'x-api-key': KEY } });    // slow, give it minutes
+  download((await c.json()).media[0].url);
+}
+```
+
+Why: the old default spent minutes and hundreds of MB of VPS disk converting at
+1080p for a choice nobody had made, and the app could not offer a picker
+without a second `?raw=1` call that returned unusable m3u8 URLs.
+
+**Measured 2026-09-07, locally against the real URLs:**
+
+| Call | Result |
+|---|---|
+| `dailymotion` no quality | 200 in **4.6s**, 4 options, no download |
+| `dailymotion&quality=480` | 200 in **14.0s**, 3.73 MB, ffprobe **848×480** h264+aac |
+| `dailymotion&quality=240` | 200 in **13.1s**, 2.14 MB, ffprobe **512×288** h264+aac |
+| `vimeo` no quality | 200 in **9.1s**, 5 options, no download |
+| `vimeo&quality=240` | 200 in **159s**, 40.4 MB (estimate said 40.6 MB) |
+| `quality=2160`/`1440`/`999` | **400** in ~3ms, before any extraction |
+
+### 1080p ceiling
+
+`2160` and `1440` are gone. They are rejected with a 400, never appear in
+`available_qualities`, and are excluded by yt-dlp's format selector itself —
+verified against a 4K source: without the filter it selected 2160, with it
+1080, even when the sort was deliberately asked for 2160. `best` still works
+but now means "best at or below 1080p".
 
 ---
 

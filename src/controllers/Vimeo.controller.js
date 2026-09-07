@@ -6,7 +6,7 @@ const execFileP = util.promisify(execFile);
 import { config } from "../config.js";
 import { computeNeedsMerge } from "../utils/media.js";
 import { mergeToMp4, publicDownloadUrl, MergeError } from "../utils/mergeDownload.js";
-import { parseQuality, availableQualities } from "../utils/quality.js";
+import { parseQuality, availableQualities, ALLOWED_QUALITIES } from "../utils/quality.js";
 import { allEntriesAreDrm, DRM_MESSAGE, DRM_CODE } from "../utils/drm.js";
 
 const ytdlp = config.ytdlpPath;
@@ -248,6 +248,20 @@ export const FetchVimeo = async (req, res) => {
 
   try { new URL(url); } catch (e) { return res.status(400).json({ error: "Invalid URL" }); }
 
+  // Validated before the (slow) probe. An unusable value is rejected rather
+  // than silently swapped for a default: returning a different quality than
+  // the one asked for, without saying so, is worse than an error.
+  const rawQuality = req.query.quality;
+  const wantsQuality = rawQuality !== undefined && String(rawQuality) !== "";
+  const quality = wantsQuality ? parseQuality(rawQuality, null) : null;
+  if (wantsQuality && !quality) {
+    return res.status(400).json({
+      success: false,
+      error: `Invalid quality. Allowed: ${[...ALLOWED_QUALITIES].join(", ")}`,
+      error_code: "invalid_quality",
+    });
+  }
+
   try {
     const vid = extractVimeoId(url);
     const referer = vid ? `https://vimeo.com/${vid}` : "https://vimeo.com/";
@@ -370,124 +384,123 @@ export const FetchVimeo = async (req, res) => {
       finalMedia = mp4Media;
     }
 
-    // Vimeo's entries are video-only HLS renditions plus a separate audio
-    // track — none are downloadable as-is. By default this converts the video
-    // server-side (the same yt-dlp+ffmpeg merge /api/downloads/prepare uses)
-    // and returns one ready .mp4 link instead of the raw m3u8 list. A naive
-    // client GETting an m3u8 URL directly gets a valid-looking 200 response
-    // that is actually a ~30KB text playlist, not a video — this was reported
-    // as "Vimeo download isn't working" and is fixed at the source here.
+    // Two-phase, matching /api/dailymotion:
     //
-    // ?raw=1 skips this and returns the old per-quality m3u8 list — useful for
-    // a quality-picker UI that converts on demand via /api/downloads/mp4.
+    //   ?url=...              -> metadata + available_qualities, NO media
+    //   ?url=...&quality=480  -> metadata + media[one mp4], NO available_qualities
+    //
+    // Vimeo publishes HLS only — video-only renditions plus a separate audio
+    // track — so nothing here is downloadable as-is and a client GETting an
+    // m3u8 URL saves a ~30KB text playlist, not a video. Phase two hands the
+    // whole job to yt-dlp instead. There is no default quality: converting at
+    // 1080p because the caller stayed silent cost minutes and hundreds of MB
+    // for a choice nobody had made.
+    //
+    // ?raw=1 still returns the per-quality m3u8 list for a client that wants
+    // to convert on demand via /api/downloads/mp4.
     const rawRequested = ["1", "true", "yes"].includes(String(req.query.raw || "").toLowerCase());
-    const ready = finalMedia.find((m) => m.has_video && m.has_audio && m.protocol === "https");
 
-    let responseMedia = finalMedia;
-    let needsMerge = computeNeedsMerge(finalMedia);
-    let autoConverted = false;
-    let autoConvertError = null;
-    let autoConvertErrorCode = null;
-    let autoConvertErrorDetails = null;
-
-    // Vimeo now serves FairPlay/Widevine CBCS streams for some videos, with no
-    // progressive mp4 alongside — every route is encrypted. yt-dlp reads the
-    // manifest fine (media[] comes back full of resolutions and sizes) but
-    // cannot decrypt the segments. Detected from the CDN URLs so we skip a
-    // download that is guaranteed to fail rather than spending a minute
-    // discovering it.
-    // Captured before auto-conversion replaces media[] with the converted file.
-    const availableQualityList = availableQualities(finalMedia);
-
-    const drm = allEntriesAreDrm(finalMedia);
-
-    if (!rawRequested && !ready && drm) {
-      autoConvertError = DRM_MESSAGE;
-      autoConvertErrorCode = DRM_CODE;
-    } else if (!rawRequested && !ready && config.autoConvert) {
-      const quality = parseQuality(req.query.quality, config.defaultQuality) || config.defaultQuality;
-      try {
-        // mergeToMp4 rewrites vimeo.com URLs to player.vimeo.com internally
-        // (see vimeoWorkaround in mergeDownload.js) — a plain vimeo.com/<id>
-        // makes yt-dlp's download path demand a login even though -j metadata
-        // extraction against that same URL works fine.
-        const { cacheKey, sizeBytes } = await mergeToMp4(url, quality);
-        responseMedia = [{
-          url: publicDownloadUrl(req, cacheKey),
-          format_id: null,
-          quality,
-          extension: "mp4",
-          type: "video",
-          has_video: true,
-          has_audio: true,
-          protocol: "https",
-          needs_conversion: false,
-          size_bytes: sizeBytes,
-          size: humanSize(sizeBytes),
-          size_is_estimate: false,
-        }];
-        needsMerge = false;
-        autoConverted = true;
-      } catch (err) {
-        // Degrade rather than fail the whole request: hand back the raw m3u8
-        // list (still usable via /api/downloads/mp4) instead of a hard 500.
-        //
-        // Keep err.details. Dropping it is what made a DRM failure look like a
-        // generic server fault: the real yt-dlp message never left the box, and
-        // `debug` only appears when media[] is empty, which it is not here.
-        console.error("Vimeo auto-convert failed:", err);
-        if (err instanceof MergeError) {
-          autoConvertError = err.message;
-          autoConvertErrorCode = err.code;
-          autoConvertErrorDetails = err.details || null;
-        } else {
-          autoConvertError = "Conversion failed";
-          autoConvertErrorCode = "conversion_failed";
-        }
-      }
-    }
-
-    const response = {
+    const meta2 = {
       url: meta.url || null,
       source: meta.source || null,
       author: meta.author || null,
       thumbnail: meta.thumbnail || null,
       title: meta.title || null,
       duration: meta.duration || null,
-      needs_merge: needsMerge,
-      media: responseMedia,
-      auto_converted: autoConverted,
-      // `drm_protected` is the flag the mobile client should branch on: the
-      // entries in media[] are real and well-formed, they are just encrypted,
-      // so nothing — not /api/downloads/mp4, not /api/downloads/prepare — can
-      // turn them into a playable file.
-      drm_protected: drm,
-      available_qualities: availableQualityList,
-      ...(autoConvertError ? { auto_convert_error: autoConvertError } : {}),
-      ...(autoConvertErrorCode ? { error_code: autoConvertErrorCode } : {}),
-      ...(autoConvertErrorDetails
-        ? { auto_convert_error_details: autoConvertErrorDetails }
-        : {}),
-      format_preference: mp4Media.length > 0 ? 'mp4_only' : 'all_formats',
-      ...(responseMedia.length === 0 ? {
+    };
+
+    // Extraction produced nothing usable — a different failure from DRM, and
+    // one the caller cannot act on.
+    if (finalMedia.length === 0) {
+      return res.status(502).json({
+        ...meta2,
+        error: "Extraction returned no media",
+        error_code: "extraction_failed",
         debug: {
           stderr_sample: (stderr || "").slice(0, 2000),
           stdout_sample: (stdout || "").slice(0, 2000),
         },
-      } : {}),
-    };
+      });
+    }
 
-    // 200 whenever the client got something it can act on: a converted mp4, a
-    // directly usable entry, or the raw list it explicitly asked for. Only a
-    // genuinely unusable result gets an error status — 422 for DRM (the
-    // request was fine, the content cannot be delivered), 502 when extraction
-    // returned nothing at all. Both previously returned 200 with a body no
-    // client could do anything with.
-    const usable = autoConverted || rawRequested || Boolean(ready);
-    if (!usable && drm) return res.status(422).json(response);
-    if (responseMedia.length === 0) return res.status(502).json(response);
+    if (allEntriesAreDrm(finalMedia)) {
+      return res.status(422).json({
+        ...meta2,
+        drm_protected: true,
+        error: DRM_MESSAGE,
+        error_code: DRM_CODE,
+      });
+    }
 
-    return res.json(response);
+    if (rawRequested) {
+      return res.json({
+        ...meta2,
+        needs_merge: computeNeedsMerge(finalMedia),
+        drm_protected: false,
+        raw: true,
+        media: finalMedia,
+        format_preference: mp4Media.length > 0 ? "mp4_only" : "all_formats",
+      });
+    }
+
+    // Phase 1 — no quality chosen yet.
+    if (!quality) {
+      return res.json({
+        ...meta2,
+        requires_quality: true,
+        drm_protected: false,
+        available_qualities: availableQualities(finalMedia),
+      });
+    }
+
+    // Phase 2 — convert at exactly what was asked for. mergeToMp4 rewrites
+    // vimeo.com URLs to player.vimeo.com internally (see vimeoWorkaround in
+    // mergeDownload.js): a plain vimeo.com/<id> makes yt-dlp's download path
+    // demand a login even though -j metadata extraction against it works.
+    try {
+      const { cacheKey, sizeBytes } = await mergeToMp4(url, quality);
+      return res.json({
+        ...meta2,
+        requires_quality: false,
+        needs_merge: false,
+        auto_converted: true,
+        drm_protected: false,
+        quality,
+        media: [
+          {
+            url: publicDownloadUrl(req, cacheKey),
+            format_id: null,
+            quality,
+            extension: "mp4",
+            type: "video",
+            has_video: true,
+            has_audio: true,
+            protocol: "https",
+            needs_conversion: false,
+            size_bytes: sizeBytes,
+            size: humanSize(sizeBytes),
+            size_is_estimate: false,
+          },
+        ],
+      });
+    } catch (err) {
+      // No silent fallback to the raw list: the caller asked for one converted
+      // file, and handing back m3u8 URLs with a 200 would look like success.
+      console.error("Vimeo conversion failed:", err);
+      if (err instanceof MergeError) {
+        return res.status(err.status).json({
+          success: false,
+          error: err.message,
+          error_code: err.code,
+          details: err.details,
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        error: "Conversion failed",
+        error_code: "conversion_failed",
+      });
+    }
   } catch (err) {
     console.error("FetchVimeo error:", err);
     return res.status(500).json({ error: "Server error", details: err?.toString?.() || String(err) });

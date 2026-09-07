@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { VideoCache } from "./cache.js";
 import { cookieArgList } from "./cookies.js";
 import { isDrmError, DRM_MESSAGE, DRM_CODE } from "./drm.js";
+import { qualityCap, MAX_HEIGHT } from "./quality.js";
 
 if (!fs.existsSync(config.downloadsDir)) {
   fs.mkdirSync(config.downloadsDir, { recursive: true });
@@ -74,16 +75,22 @@ export function mergeToMp4(pageUrl, quality = config.defaultQuality, { extraArgs
     const outputTemplate = path.join(config.downloadsDir, `video_${stamp}.%(ext)s`);
 
     // h264 + aac keeps the result playable on every mobile client without a
-    // re-encode; res: caps the height without failing when it is unavailable.
-    const sortSpec =
-      quality === "best"
-        ? "vcodec:h264,acodec:aac"
-        : `res:${quality},vcodec:h264,acodec:aac`;
+    // re-encode. `cap` turns "best" into 1080 so no request can reach 4K.
+    const cap = qualityCap(quality);
+    const sortSpec = `res:${cap},vcodec:h264,acodec:aac`;
+
+    // -S res: only *sorts*, so on a source whose renditions all sit above the
+    // cap it would still pick one. The height filters below exclude them
+    // outright; the trailing unfiltered selector is the fallback for a source
+    // that publishes nothing at or below the cap, where refusing entirely
+    // would be worse than returning its closest rendition.
+    const formatSelector =
+      `bv*[height<=${cap}]+ba/b[height<=${cap}]/bv*[height<=${MAX_HEIGHT}]+ba/bv*+ba/b`;
 
     const args = [
       "--no-warnings",
       "-f",
-      "bv*+ba/b",
+      formatSelector,
       "-S",
       sortSpec,
       "--merge-output-format",

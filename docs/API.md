@@ -109,67 +109,91 @@ Other notes:
   client **must** replay those headers on the download request or the CDN
   returns 403.
 
-### Auto-conversion — Vimeo and Dailymotion only
+### Vimeo and Dailymotion are two-phase
 
-Both sources only ever publish HLS. A naive `GET` on the raw playlist URL
-returns `200` with a real, valid-looking response — it is just a ~30 KB text
-file, not a video. That was reported as "Vimeo download isn't working"; it is
-the same failure as the m3u8-instead-of-mp4 complaint, not a separate bug.
+Both sources publish HLS only, so nothing they return is downloadable as-is: a
+plain `GET` on an m3u8 URL saves a ~30 KB text playlist, not a video. These two
+endpoints therefore convert server-side — but **only when you ask for a
+specific quality**.
 
-**By default, `/api/vimeo` and `/api/dailymotion` now download and remux the
-video server-side and return one ready `.mp4` link** instead of the raw
-per-quality list — no client-side conversion step needed:
+| Request | Response |
+|---|---|
+| `?url=...` | metadata + `available_qualities`, **no `media`** |
+| `?url=...&quality=480` | metadata + `media` (one ready mp4), **no `available_qualities`** |
+| `?url=...&raw=1` | the raw per-quality m3u8 list (escape hatch) |
+
+**Phase 1 — ask what is available.** A metadata probe only: no download, no
+disk written, a few seconds.
 
 ```json
 {
-  "url": "https://vimeo.com/1160592223",
-  "source": "Vimeo",
-  "title": "...",
+  "url": "https://www.dailymotion.com/video/xa1c774",
+  "source": "Dailymotion",
+  "title": "...", "author": "...", "thumbnail": "...", "duration": 51,
+  "requires_quality": true,
+  "drm_protected": false,
+  "available_qualities": [
+    { "quality": "1080", "label": "1080p", "height": 1080, "size_bytes": 39662700, "size": "37.83 MB", "size_is_estimate": true },
+    { "quality": "720",  "label": "720p",  "height": 720,  "size_bytes": 13701660, "size": "13.07 MB", "size_is_estimate": true },
+    { "quality": "480",  "label": "480p",  "height": 480,  "size_bytes": 5331285,  "size": "5.08 MB",  "size_is_estimate": true },
+    { "quality": "240",  "label": "288p",  "height": 288,  "size_bytes": 2936070,  "size": "2.80 MB",  "size_is_estimate": true }
+  ]
+}
+```
+
+**Phase 2 — convert the one the user picked.**
+
+```json
+{
+  "url": "https://www.dailymotion.com/video/xa1c774",
+  "source": "Dailymotion", "title": "...", "duration": 51,
+  "requires_quality": false,
   "needs_merge": false,
   "auto_converted": true,
+  "drm_protected": false,
+  "quality": "480",
   "media": [
     {
-      "url": "https://your-domain/downloads/video_....mp4",
-      "quality": "1080",
-      "extension": "mp4",
-      "type": "video",
-      "has_video": true,
-      "has_audio": true,
-      "protocol": "https",
-      "needs_conversion": false,
-      "size_bytes": 386814026,
-      "size": "368.90 MB",
-      "size_is_estimate": false
+      "url": "https://your-domain/downloads/video_1788772518022.mp4",
+      "quality": "480", "extension": "mp4", "type": "video",
+      "has_video": true, "has_audio": true,
+      "protocol": "https", "needs_conversion": false,
+      "size_bytes": 3912226, "size": "3.73 MB", "size_is_estimate": false
     }
   ]
 }
 ```
 
-**This is slow — it is a real download, not a metadata probe.** A short clip
-converts in 5–25s; a 13-minute Vimeo video at 1080p measured **172s**. Set the
-client's HTTP timeout well above what extraction used to need (a 60s timeout
-that worked before will now cut off long or high-quality videos mid-request).
-`quality` (below) is the lever to trade this off.
+**There is no default quality.** A request without `quality` never downloads
+anything. Converting at 1080p because the caller stayed silent spent minutes
+and hundreds of MB of VPS disk on a choice the user had not made, and left the
+client unable to offer a picker without a second request.
 
-Query parameters:
+Branch on **`requires_quality`**: `true` means show the picker, `false` means
+`media[0].url` is a finished file.
 
-| Param | Effect |
-|---|---|
-| `quality` | Same values as `/api/downloads/prepare`: `best`, `2160`, `1440`, `1080` (default), `720`, `480`, `360`, `240`. Lower = faster and smaller. |
-| `raw=1` | Skip conversion; return the old fast, metadata-only, per-quality m3u8 list (`needs_conversion: true` on every entry) for a client that wants to offer its own quality picker and convert on demand via `/api/downloads/mp4`. |
+Other behaviour worth knowing:
 
-If the server-side conversion fails for any reason, the endpoint **does not
-error out** — it falls back to the raw list with `auto_converted: false` and an
-`auto_convert_error` message, so the request still returns something usable.
-
-Server-wide, this can be turned off with `AUTO_CONVERT=false` in `.env`
-(reverts both endpoints to the old always-raw behavior; `?raw=1` still works
-either way).
+- An unrecognised `quality` is now a **400** with `error_code:
+  "invalid_quality"`, rejected in milliseconds before any extraction runs. It
+  used to be silently swapped for the default, so you got a different quality
+  than you asked for with no indication.
+- A conversion failure is a real error status (422 for DRM, 504 for timeout,
+  500 otherwise) with an `error_code`. It no longer degrades to a 200 carrying
+  the raw m3u8 list — with `media` gone from the default response there is
+  nothing usable to degrade to.
+- `raw=1` is unchanged and still returns the per-quality m3u8 list, marked
+  `raw: true`, for a client that wants to convert on demand via
+  `/api/downloads/mp4`.
+- Conversion time tracks quality far more than length. The 51-second
+  Dailymotion clip above took ~14s at 480p; a 13-minute Vimeo video took 159s
+  at 240p because Vimeo's HLS fetch is slow. Give phase 2 a generous timeout;
+  phase 1 answers in seconds.
 
 ### Choosing a quality
 
-`/api/vimeo` and `/api/dailymotion` convert to `DEFAULT_QUALITY` (1080) unless
-you say otherwise. Pass `?quality=` to pick another:
+`quality` is what triggers conversion on `/api/vimeo` and `/api/dailymotion` —
+without it they return the menu instead of a file:
 
 ```
 GET /api/dailymotion?url=<encoded>&quality=480
@@ -198,8 +222,13 @@ rather than a second `?raw=1` call:
   rendition, so the real mp4 is slightly larger once audio is merged —
   `size_is_estimate` is always `true`. Good enough to warn "this is 12 MB"
   before committing a phone to the download.
-- `best` is always accepted but is never listed: it has no predictable size,
-  and on a long video it is a large file and a slow conversion.
+- `best` is always accepted but is never listed: it has no predictable size.
+  It now means "the best at or below 1080p" — it can no longer reach 4K.
+- **Nothing above 1080p is served.** `2160` and `1440` are rejected with a
+  400, are never listed in `available_qualities`, and are excluded by the
+  format selector itself, so even `best` on a 4K source returns 1080p. A 4K
+  merge is ~230 MB per request on a box that also hosts Postgres and MinIO,
+  and no mobile client benefits from it.
 
 Quality drives conversion time far more than length does. A 13-minute Vimeo
 video took ~4s at `quality=480` (64 MB) versus 172s at `quality=1080`
@@ -281,7 +310,7 @@ its own. YouTube is the common case.
 Pass the **original page URL**, not a resolved CDN link: those expire within
 minutes and several sources require the original headers and cookies.
 
-`quality` accepts `best`, `2160`, `1440`, `1080`, `720`, `480`, `360`, `240`
+`quality` accepts `best`, `1080`, `720`, `480`, `360`, `240`
 and defaults to `DEFAULT_QUALITY`. The server picks h264 + aac where available
 so the result plays on any mobile client without re-encoding.
 

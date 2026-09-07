@@ -38,23 +38,19 @@ export const config = {
     process.env.FFMPEG_PATH ||
     (isWindows ? path.resolve(root, "ffmpeg/bin/ffmpeg.exe") : "/usr/bin/ffmpeg"),
 
-  // Default height cap for /api/downloads/prepare. "best" is allowed but a
-  // 2160p YouTube merge is ~230MB of VPS disk and bandwidth per request.
+  // Default height cap for /api/downloads/prepare only — /api/vimeo and
+  // /api/dailymotion have no default and require an explicit ?quality=.
+  // Capped at 1080 regardless: see MAX_QUALITY in utils/quality.js.
   defaultQuality: process.env.DEFAULT_QUALITY || "1080",
 
   // Hard ceiling on a merge job. A long video at high quality can run for
   // minutes; past this the request is killed and returns 504.
   mergeTimeoutMs: Number(process.env.MERGE_TIMEOUT_MS) || 600_000,
 
-  // Vimeo and Dailymotion only ever publish HLS (m3u8) — a naive client that
-  // GETs that URL and saves it gets a text playlist, not a video. When this is
-  // on (the default), /api/vimeo and /api/dailymotion download and remux the
-  // video server-side and hand back a ready .mp4 link instead, the same way
-  // /api/downloads/prepare already does for YouTube. Adds real latency (a full
-  // download, not just a metadata probe) to those two endpoints; set
-  // AUTO_CONVERT=false to get the old fast metadata-only response, or pass
-  // ?raw=1 on a single request to opt out without changing server config.
-  autoConvert: process.env.AUTO_CONVERT !== "false",
+  // AUTO_CONVERT is gone. It switched a *default* conversion on and off, and
+  // there is no longer a default: /api/vimeo and /api/dailymotion convert only
+  // when the caller passes ?quality=, so the flag had nothing left to control.
+  // A stale AUTO_CONVERT in an existing .env is simply ignored.
 
   // Routes TikTok extraction through the mobile API host, which works when
   // the web extractor breaks. Set empty to always use yt-dlp's default.
