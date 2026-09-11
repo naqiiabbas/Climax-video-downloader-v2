@@ -1,3 +1,18 @@
+# NOT for the shared VPS — use docker-compose.vps.yml there.
+#
+# This file binds ports 80/443/8000 directly and runs its own nginx+certbot.
+# On 2026-09-11 a stray `docker compose up` on the VPS (missing `-f
+# docker-compose.vps.yml`) silently picked THIS file up instead, attaching
+# the API container to Compose's own default network — invisible to the
+# Caddy instance that actually owns 80/443 on that host — and spawning two
+# containers (nginx, certbot) that should never have existed there. Renamed
+# from docker-compose.yml specifically so a bare `docker compose up` (no -f)
+# fails outright instead of silently doing this again. See
+# deploy/VPS-DEPLOY.md for the VPS deployment path.
+#
+# This file is for a standalone deploy with no existing reverse proxy on the
+# box — its own nginx does TLS via Let's Encrypt/certbot directly.
+
 services:
   api:
     build: .

@@ -20,9 +20,16 @@ What is already there:
 > **Note:** port **9000 is taken by MinIO**. The old monorepo ran this service on
 > 9000 — never reuse that here.
 
-`docker-compose.yml` (the default) starts its own nginx on 80/443. **Do not use
-it on this host.** Use `docker-compose.vps.yml`, which binds **no host ports at
-all** and instead joins Caddy's Docker network. Nothing it does can collide.
+**Always pass `-f docker-compose.vps.yml` explicitly.** There is no plain
+`docker-compose.yml` in this repo anymore — it was renamed to
+`docker-compose.local-only.yml` specifically so a bare `docker compose up`
+(without `-f`) fails outright instead of silently doing the wrong thing. That
+exact mistake happened on 2026-09-11: a stray invocation without `-f` picked
+up the old default file, which starts its own nginx on 80/443 and attaches
+the API to Compose's own default network — invisible to Caddy, and colliding
+with ports Caddy already owns. `docker-compose.vps.yml` binds **no host ports
+at all** and joins Caddy's Docker network instead — nothing it does can
+collide, provided it's the file actually being run.
 
 ---
 
