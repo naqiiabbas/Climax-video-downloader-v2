@@ -158,11 +158,18 @@ disk written, a few seconds.
       "quality": "480", "extension": "mp4", "type": "video",
       "has_video": true, "has_audio": true,
       "protocol": "https", "needs_conversion": false,
-      "size_bytes": 3912226, "size": "3.73 MB", "size_is_estimate": false
+      "size_bytes": 3912226, "size": "3.73 MB", "size_is_estimate": false,
+      "storage_url": "https://<project>.supabase.co/storage/v1/object/public/downloads/video_1788772518022.mp4",
+      "storage_expires_in": 7200
     }
   ]
 }
 ```
+
+`storage_url` here follows the same rule as everywhere else it appears: `null`
+until `SUPABASE_STORAGE_ENABLED=true` and the upload succeeds, never blocks
+the response, `url` is the one guaranteed to work. See
+[Two copies, two lifetimes](#two-copies-two-lifetimes--storage_url) above.
 
 **There is no default quality.** A request without `quality` never downloads
 anything. Converting at 1080p because the caller stayed silent spent minutes
@@ -321,7 +328,9 @@ so the result plays on any mobile client without re-encoding.
   "key": "video_1788268008660.mp4",
   "size_bytes": 11903239,
   "quality": "360",
-  "expires_in": 3600
+  "expires_in": 1500,
+  "storage_url": "https://<project>.supabase.co/storage/v1/object/public/downloads/video_1788268008660.mp4",
+  "storage_expires_in": 7200
 }
 ```
 
@@ -335,19 +344,39 @@ qualities cost real disk and bandwidth — a `best` YouTube merge is ~230 MB.
 | GET | `/api/downloads/mp4?url=<m3u8-url>` |
 
 Downloads the playlist, remuxes `.ts` → `.mp4` with ffmpeg, and stores it for
-`CACHE_TTL_SECONDS` (default 3600).
+`CACHE_TTL_SECONDS`.
 
 ```json
 {
   "success": true,
   "file_url": "https://your-domain/downloads/video_1730000000000.mp4",
   "key": "video_1730000000000.mp4",
-  "expires_in": 3600
+  "expires_in": 1500,
+  "storage_url": "https://<project>.supabase.co/storage/v1/object/public/downloads/video_1730000000000.mp4",
+  "storage_expires_in": 7200
 }
 ```
 
 Fetch `file_url` directly — the static route needs no API key. The file is
 deleted automatically when the TTL expires.
+
+### Two copies, two lifetimes — `storage_url`
+
+Every file produced by `/api/downloads/prepare`, `/api/downloads/mp4`, and the
+Vimeo/Dailymotion phase-2 conversion also gets uploaded to Supabase Storage as
+a second, longer-lived copy, independent of the VPS one:
+
+| Field | Lives on | Default lifetime |
+|---|---|---|
+| `file_url` | VPS disk | `CACHE_TTL_SECONDS` (25 min) |
+| `storage_url` | Supabase Storage | `SUPABASE_STORAGE_TTL_SECONDS` (2h) |
+
+**`storage_url` is best-effort and can be `null`.** It is `null` when the
+feature is disabled (`SUPABASE_STORAGE_ENABLED=false`, the default) or when
+the upload itself failed — check for `storage_error` in that case. `file_url`
+is the one guaranteed to exist; a failed Storage upload never fails the
+request. No user auth is involved in either copy — same unauthenticated model
+as the VPS one.
 
 ## Maintenance
 

@@ -7,6 +7,7 @@ import { VideoCache } from "../utils/cache.js";
 import { mergeToMp4, publicDownloadUrl, MergeError } from "../utils/mergeDownload.js";
 import { ALLOWED_QUALITIES, parseQuality } from "../utils/quality.js";
 import { playlistIsDrm, DRM_MESSAGE, DRM_CODE } from "../utils/drm.js";
+import { uploadAndTrack } from "../utils/supabaseStorage.js";
 
 const downloadDir = config.downloadsDir;
 if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
@@ -48,7 +49,7 @@ export const DownloadMediaMp4 = async (req, res) => {
     const mp4File = outputFile.replace(/\.ts$/, ".mp4");
     const command = `"${config.ffmpegPath}" -y -i "${outputFile}" -c copy "${mp4File}"`;
 
-    exec(command, (error) => {
+    exec(command, async (error) => {
       if (error) {
         console.error("Conversion error:", error);
         return res.status(500).json({ success: false, error: "Conversion failed" });
@@ -66,11 +67,17 @@ export const DownloadMediaMp4 = async (req, res) => {
         return res.status(500).json({ success: false, error: "Failed to cache video" });
       }
 
+      // Best-effort — see uploadAndTrack; never fails the request.
+      const { url: storageUrl, error: storageError } = await uploadAndTrack(mp4File, cacheKey);
+
       res.json({
         success: true,
         file_url: publicDownloadUrl(req, cacheKey),
         key: cacheKey,
         expires_in: config.cacheTtlSeconds,
+        storage_url: storageUrl,
+        storage_expires_in: storageUrl ? config.supabaseStorage.ttlSeconds : null,
+        ...(storageError ? { storage_error: storageError } : {}),
       });
     });
   });
@@ -111,7 +118,7 @@ export const PrepareDownload = async (req, res) => {
   }
 
   try {
-    const { cacheKey, sizeBytes } = await mergeToMp4(pageUrl, quality);
+    const { cacheKey, sizeBytes, storageUrl, storageError } = await mergeToMp4(pageUrl, quality);
     res.json({
       success: true,
       file_url: publicDownloadUrl(req, cacheKey),
@@ -119,6 +126,9 @@ export const PrepareDownload = async (req, res) => {
       size_bytes: sizeBytes,
       quality,
       expires_in: config.cacheTtlSeconds,
+      storage_url: storageUrl,
+      storage_expires_in: storageUrl ? config.supabaseStorage.ttlSeconds : null,
+      ...(storageError ? { storage_error: storageError } : {}),
     });
   } catch (err) {
     if (err instanceof MergeError) {

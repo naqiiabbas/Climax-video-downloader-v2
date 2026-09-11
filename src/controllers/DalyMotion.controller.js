@@ -103,7 +103,7 @@ export const DalyMotionAndPainternst = async (req, res) => {
     }
 
     // Phase 2 — convert at exactly what was asked for.
-    const { cacheKey, sizeBytes } = await mergeToMp4(url, quality);
+    const { cacheKey, sizeBytes, storageUrl, storageError } = await mergeToMp4(url, quality);
     return res.json({
       ...meta,
       requires_quality: false,
@@ -125,6 +125,11 @@ export const DalyMotionAndPainternst = async (req, res) => {
           size_bytes: sizeBytes,
           size: formatFileSize(sizeBytes),
           size_is_estimate: false,
+          // Longer-lived copy on Supabase Storage; null until that upload
+          // finishes or if it fails — `url` above is the one guaranteed to work.
+          storage_url: storageUrl,
+          storage_expires_in: storageUrl ? config.supabaseStorage.ttlSeconds : null,
+          ...(storageError ? { storage_error: storageError } : {}),
         },
       ],
     });

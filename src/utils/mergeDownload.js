@@ -6,6 +6,7 @@ import { VideoCache } from "./cache.js";
 import { cookieArgList } from "./cookies.js";
 import { isDrmError, DRM_MESSAGE, DRM_CODE } from "./drm.js";
 import { qualityCap, MAX_HEIGHT } from "./quality.js";
+import { uploadAndTrack } from "./supabaseStorage.js";
 
 if (!fs.existsSync(config.downloadsDir)) {
   fs.mkdirSync(config.downloadsDir, { recursive: true });
@@ -113,7 +114,7 @@ export function mergeToMp4(pageUrl, quality = config.defaultQuality, { extraArgs
       config.ytdlpPath,
       args,
       { maxBuffer: 1024 * 1024 * 50, timeout: config.mergeTimeoutMs },
-      (error, stdout, stderr) => {
+      async (error, stdout, stderr) => {
         if (error) {
           console.error("Merge download failed:", stderr || error.message);
           const killed = Boolean(error.killed || error.signal);
@@ -162,7 +163,11 @@ export function mergeToMp4(pageUrl, quality = config.defaultQuality, { extraArgs
           // Size is informational only.
         }
 
-        resolve({ cacheKey, filePath: produced, sizeBytes, quality });
+        // Best-effort: a failed upload never fails the request, since the VPS
+        // copy above is already registered and guaranteed to work.
+        const { url: storageUrl, error: storageError } = await uploadAndTrack(produced, cacheKey);
+
+        resolve({ cacheKey, filePath: produced, sizeBytes, quality, storageUrl, storageError });
       }
     );
   });

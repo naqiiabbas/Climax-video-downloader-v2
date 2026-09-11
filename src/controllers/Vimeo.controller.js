@@ -458,7 +458,7 @@ export const FetchVimeo = async (req, res) => {
     // mergeDownload.js): a plain vimeo.com/<id> makes yt-dlp's download path
     // demand a login even though -j metadata extraction against it works.
     try {
-      const { cacheKey, sizeBytes } = await mergeToMp4(url, quality);
+      const { cacheKey, sizeBytes, storageUrl, storageError } = await mergeToMp4(url, quality);
       return res.json({
         ...meta2,
         requires_quality: false,
@@ -480,6 +480,11 @@ export const FetchVimeo = async (req, res) => {
             size_bytes: sizeBytes,
             size: humanSize(sizeBytes),
             size_is_estimate: false,
+            // Longer-lived copy on Supabase Storage; null until that upload
+            // finishes or if it fails — `url` above is the one guaranteed to work.
+            storage_url: storageUrl,
+            storage_expires_in: storageUrl ? config.supabaseStorage.ttlSeconds : null,
+            ...(storageError ? { storage_error: storageError } : {}),
           },
         ],
       });

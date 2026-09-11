@@ -2,7 +2,7 @@
 
 Every endpoint that exists in the service today, with its live status.
 
-**Last verified:** 2026-09-03 · yt-dlp `2026.08.19` · all endpoints called against real URLs, not mocked.
+**Last verified:** 2026-09-11 · yt-dlp `2026.08.19` · all endpoints called against real URLs, not mocked.
 
 Full request/response reference: [../docs/API.md](../docs/API.md)
 Postman collection: [../docs/postman_collection.json](../docs/postman_collection.json)
@@ -58,11 +58,11 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 | 12 | POST | `/api/update-cookies` | ✅ Working | Admin only |
 | 12b | GET | `/api/status` | ✅ Working | Files on disk, sizes, deletion times. Admin/ops |
 | 12c | DELETE | `/api/clear-server` | ✅ Working | Deletes every converted file now. **DELETE only** — GET/POST 404. Admin/ops |
-| 13 | GET | `/api/history/status` | ✅ Working | Is history configured? |
-| 14 | GET | `/api/history` | ⚙️ Needs setup | Caller's own history |
-| 15 | POST | `/api/history` | ⚙️ Needs setup | Record a download |
-| 16 | DELETE | `/api/history/:id` | ⚙️ Needs setup | Delete one entry |
-| 17 | DELETE | `/api/history` | ⚙️ Needs setup | Clear all |
+| 13 | GET | `/api/history/status` | ✅ Working, unused | Endpoints built but dormant — see below |
+| 14 | GET | `/api/history` | 💤 Dormant | Not pursued — no login in the app |
+| 15 | POST | `/api/history` | 💤 Dormant | Not pursued — no login in the app |
+| 16 | DELETE | `/api/history/:id` | 💤 Dormant | Not pursued — no login in the app |
+| 17 | DELETE | `/api/history` | 💤 Dormant | Not pursued — no login in the app |
 
 ---
 
@@ -85,16 +85,13 @@ IP turned out not to hurt — nothing was bot-blocked, and TikTok was markedly
 `/api/downloads/prepare` verified on the VPS: YouTube at 360p returned an
 11.9 MB MP4.
 
-> **Vimeo and Dailymotion auto-convert as of 2026-09-03.** Both used to return
-> a raw m3u8 playlist that a naive client would save as a broken "video" — that
-> was reported as "Vimeo download isn't working" and is the same bug as the
-> m3u8-format complaint. By default both endpoints now download and remux
-> server-side and hand back one ready `.mp4` link, with `needs_merge: false`.
-> **This makes those two endpoints slow** — a real download, not a metadata
-> probe (measured 5s–172s depending on length/quality) — so give them a much
-> longer client timeout than the others, or pass `?quality=480` to bound it.
-> `?raw=1` restores the old fast, metadata-only, per-quality list. Full
-> details in [docs/API.md](../docs/API.md#auto-conversion--vimeo-and-dailymotion-only).
+> **Vimeo and Dailymotion never return a raw m3u8 URL as `media[]` by
+> default.** That used to happen and was reported as "Vimeo download isn't
+> working" — a naive client saving the URL got a text playlist, not a video.
+> Fixed 2026-09-03 by auto-converting server-side; **reworked again
+> 2026-09-07** into the two-phase model below, since always converting at
+> 1080p by default cost minutes and hundreds of MB for a choice nobody had
+> made. See [Vimeo and Dailymotion: two calls, not one](#vimeo-and-dailymotion-two-calls-not-one).
 
 Anything else yt-dlp supports should work through `/api/download`, but only the
 rows above have actually been exercised.
@@ -226,48 +223,38 @@ ERROR: [Instagram] Instagram sent an empty media response.
 
 **Treat Instagram as best-effort in the app** — surface a clear "temporarily unavailable" message rather than a generic error.
 
-### 6. `GET /api/vimeo` — Vimeo ✅ (auto-converts)
+### 6. `GET /api/vimeo` — Vimeo ✅ (two-phase, no default quality)
 
 Vimeo only ever publishes HLS — its raw entries are video-only renditions plus
-a separate audio track, so **by default** the endpoint downloads and remuxes
-server-side and returns one ready `.mp4`:
+a separate audio track, so nothing in the raw list is downloadable as-is. See
+[Vimeo and Dailymotion: two calls, not one](#vimeo-and-dailymotion-two-calls-not-one)
+for the full two-phase contract (`requires_quality` → `available_qualities` →
+call again with `?quality=`).
 
-```json
-{ "needs_merge": false, "auto_converted": true,
-  "media": [{ "url": "https://.../downloads/video_....mp4", "quality": "1080",
-              "has_video": true, "has_audio": true, "protocol": "https",
-              "needs_conversion": false, "size": "368.90 MB" }] }
-```
+**Verified:** a 13-minute video at `quality=1080` took **172s** and produced a
+valid 368.9 MB mp4 (ffprobe: h264 1080p + aac stereo) — the size estimate from
+`available_qualities` (369.5 MB) was accurate to within 0.2%. The same video at
+`quality=480` took **~4s** and produced a valid 64.3 MB mp4 — quality drives
+the time far more than length does, so `?quality=480` is the lever if 1080p is
+too slow.
 
-**Verified:** a 13-minute video at the default `quality=1080` took **172s** and
-produced a valid 368.9 MB mp4 (ffprobe: h264 1080p + aac stereo) — the size
-estimate from the raw listing (369.5 MB) was accurate to within 0.2%.
+If conversion fails (other than DRM, which returns `422` immediately), the
+endpoint returns the error directly — there is no fallback to a raw list
+anymore, since the caller explicitly asked for one converted file.
 
-Quality dominates that number far more than length does. The same 13-minute
-video at `quality=480` produced a valid 64.3 MB mp4 in **~4 seconds** on the
-VPS (2026-09-04). The "give Vimeo minutes" advice is really about 1080p, not
-about the endpoint — passing `?quality=480` makes it comparable to the
-metadata-only endpoints.
+`?raw=1` still returns the old fast, metadata-only, per-quality m3u8 list
+(`needs_conversion: true` on every entry) for a client building its own
+quality picker and converting on demand via `/api/downloads/mp4`.
 
-Pass `?quality=480` (or lower) to trade quality for speed, or `?raw=1` for the
-old fast per-quality m3u8 list (`needs_conversion: true` on every entry) if you
-want to build your own quality picker and convert on demand via
-`/api/downloads/mp4`.
+### 7. `GET /api/dailymotion` — Dailymotion + Pinterest ✅ (two-phase, no default quality)
 
-If server-side conversion fails, the endpoint falls back to the raw list rather
-than erroring — check `auto_converted` (`false` means you got the raw list;
-`auto_convert_error` says why).
+Same contract as Vimeo. **Verified:** `quality=240` → `200` in ~10–14s, a
+2–4 MB ffprobe-valid mp4 (`ftypiso5`). Same `raw=1` escape hatch.
 
-### 7. `GET /api/dailymotion` — Dailymotion + Pinterest ✅ (auto-converts)
-
-Same behavior as Vimeo — **verified:** `200` in ~11s, single ready mp4, 11.92 MB
-(ffprobe-valid, `ftypiso5`). Same `quality` and `raw=1` params, same
-graceful-fallback behavior on conversion failure.
-
-Previously every entry reported `extension: "mp4"` while the URL was actually
-an HLS playlist — a plain GET returned ~554 bytes of text served as
-`content-type: video/mp4`. That is fixed now by not handing the client the raw
-playlist URL at all in the default response.
+Every raw entry reports `extension: "mp4"` while the underlying URL is
+actually an HLS playlist — a plain GET on it returns ~554 bytes of text served
+as `content-type: video/mp4`. Only relevant if you use `?raw=1`; the default
+two-phase flow never hands the client that URL at all.
 
 ---
 
@@ -284,22 +271,43 @@ Use this whenever the extraction response has `needs_merge: true`.
 Takes the **original page URL**, not a resolved CDN link — those expire in
 minutes and several sources need the original headers and cookies.
 
-`quality`: `best`, `2160`, `1440`, `1080`, `720`, `480`, `360`, `240`
-(default `DEFAULT_QUALITY`, currently `1080`). Higher costs real VPS disk and
-bandwidth — a `best` YouTube merge is ~230 MB. Times out at
-`MERGE_TIMEOUT_MS` (10 min) with a `504`.
+`quality`: `best`, `1080`, `720`, `480`, `360`, `240` (default `DEFAULT_QUALITY`,
+currently `1080`). **Nothing above 1080p is accepted** — `2160`/`1440` return
+`400` immediately, and `best` now means "best at or below 1080p", not 4K.
+Higher still costs real VPS disk and bandwidth — a `best` YouTube merge is
+~230 MB. Times out at `MERGE_TIMEOUT_MS` (10 min) with a `504`.
 
-Returns `{success, file_url, key, size_bytes, quality, expires_in}`.
+Returns `{success, file_url, key, size_bytes, quality, expires_in, storage_url, storage_expires_in}`.
 
 ### 8. `GET /api/downloads/mp4?url=<m3u8>` ✅
 
 Remuxes an HLS stream to MP4. **Verified:** `200`, produced an 18.32 MB valid MP4 (`ftyp` container).
 
-Returns `{success, file_url, key, expires_in}`. **Slow — 47.6s** for a large file. Scale the client timeout to the file size and show progress.
+Returns `{success, file_url, key, expires_in, storage_url, storage_expires_in}`. **Slow — 47.6s** for a large file. Scale the client timeout to the file size and show progress.
 
 ### 9. `GET /downloads/<filename>` ✅
 
-Serves converted files. No API key. Deleted automatically after `CACHE_TTL_SECONDS` (default 1h).
+Serves converted files. No API key. Deleted automatically after `CACHE_TTL_SECONDS`.
+
+---
+
+### `storage_url` — a second, longer-lived copy (added 2026-09-11)
+
+Every file that `/api/downloads/prepare`, `/api/downloads/mp4`, and the
+Vimeo/Dailymotion phase-2 conversion produce also gets uploaded to Supabase
+Storage, independent of the VPS copy:
+
+| | Lives on | Lifetime |
+|---|---|---|
+| `file_url` | VPS disk | `CACHE_TTL_SECONDS` (25 min) |
+| `storage_url` | Supabase Storage | `SUPABASE_STORAGE_TTL_SECONDS` (2h) |
+
+**`storage_url` can be `null`** — best-effort, never blocks the response. It's
+`null` when the feature isn't turned on server-side, or if that one upload
+failed (check `storage_error` in that case). **`file_url` is the one
+guaranteed to exist** — use `storage_url` only as a bonus longer-lived link,
+never as the only URL you keep. No login or user identity is involved in
+either copy — video downloads on this API have never required an account.
 
 ### 10. `GET /api/delete-video?url=<file_url>` ✅
 
@@ -313,7 +321,17 @@ Admin operation — should not be exposed in the mobile app.
 
 ---
 
-## Download history (Supabase)
+## Download history (Supabase) — dormant, not currently pursued
+
+> ⚠️ **Decided 2026-09-11: not being pursued right now.** The app has no login
+> flow at all — confirmed with the user, not just "no Supabase auth" — so it
+> has nothing to put in `x-supabase-token`. That's why `download_history`
+> stayed empty despite the app being live; **not a server bug.** Rather than
+> add a login just for this, Supabase is instead used for
+> [file storage](#storage_url--a-second-longer-lived-copy-added-2026-09-11)
+> above, which needs no user identity at all. The endpoints below are
+> complete, tested, and left in place — nothing is broken by leaving them
+> unused, and they're ready if real accounts get added later.
 
 Per-user history, stored in Supabase Postgres. Two headers are required:
 
@@ -393,20 +411,27 @@ const convert = media.find(m => m.has_video && m.has_audio && m.needs_conversion
 The top-level **`needs_merge: true`** means no single entry carries both video
 and audio, so `/api/downloads/prepare` is the only way to get a usable file.
 
-**Vimeo and Dailymotion no longer need any of this by default** — as of
-2026-09-03 both auto-convert server-side and hand back one ready mp4 in
-`media[0]` (`needs_merge: false`, `needs_conversion: false`). The rules above
-only apply to them if you pass `?raw=1` to get the old raw m3u8 list back.
+**Vimeo and Dailymotion don't use `needs_merge`/`needs_conversion` at all** —
+they follow their own two-phase contract instead (`requires_quality` →
+`available_qualities` → call again with `?quality=`, see
+[Vimeo and Dailymotion: two calls, not one](#vimeo-and-dailymotion-two-calls-not-one)).
+The rules above apply to them only if you pass `?raw=1` for the old raw m3u8
+list.
 
 **2. Extracted URLs expire within minutes.** Resolve immediately before downloading; never cache them.
 
 **3. `size_is_estimate: true`** means the size came from bitrate × duration. Show it as approximate.
 
 **4. Timeouts.** 60s for extraction and `/downloads/prepare`. **Vimeo and
-Dailymotion need much more** — their default auto-conversion is a real
-download (measured 5s–172s), not a metadata probe. Give those two a generous
-timeout (minutes, not seconds) or pass `?quality=480` to bound the work, or
-`?raw=1` to skip conversion and get a fast response back.
+Dailymotion's phase-2 conversion needs much more** — it's a real download
+(measured 5s–172s depending on quality), not a metadata probe. Give it a
+generous timeout (minutes, not seconds) and let `?quality=` be the lever the
+user controls, rather than a fixed default the app guesses at.
+
+**5. `storage_url` can be `null` — always fall back to `file_url`.** Every
+converted file also gets a longer-lived Supabase Storage copy, but that upload
+is best-effort. See [storage_url](#storage_url--a-second-longer-lived-copy-added-2026-09-11)
+above.
 
 ---
 
@@ -416,7 +441,8 @@ timeout (minutes, not seconds) or pass `?quality=480` to bound the work, or
 |---|---|
 | Instagram needs manual cookie upload | Endpoint 5 down until cookies are supplied; recurs on expiry |
 | TikTok reliability depends on retries | ~40% single-attempt success; retries cover it but cost latency |
-| Conversion and merge are synchronous | A large file holds the request open for a minute or more; no progress reporting. `/api/downloads/prepare`, and now `/api/vimeo`/`/api/dailymotion` by default, can run for minutes at `best`/`1080` |
-| Vimeo DRM | Some Vimeo videos cannot be downloaded at all; scope not yet established |
+| Conversion and merge are synchronous | A large file holds the request open for a minute or more; no progress reporting. `/api/downloads/prepare` and the Vimeo/Dailymotion phase-2 call can run for minutes at `1080p` |
+| Vimeo DRM | Some Vimeo videos cannot be downloaded at all; scope not yet fully established, see [DRM section](#drm-protected-videos-vimeo) |
 | No rate limiting | Any holder of the API key can drive unlimited ffmpeg jobs |
-| Merged/converted files consume VPS disk on every call | Was opt-in (only when a client explicitly requested conversion); as of 2026-09-03 every default `/api/vimeo` and `/api/dailymotion` call writes one, held for `CACHE_TTL_SECONDS`. `?raw=1` avoids this. |
+| Merged/converted files consume VPS disk on request | Only when a client actually chooses a quality (Vimeo/Dailymotion) or explicitly calls `/api/downloads/*` — held for `CACHE_TTL_SECONDS` (25 min) |
+| Supabase Storage upload never tested against a real bucket | Streaming mechanics (large-file upload, correct byte count) verified locally against a dummy server; graceful fallback on failure verified. The actual Supabase Storage REST endpoint shapes used are implemented per documented convention but unverified against a real project — first real deploy with `SUPABASE_STORAGE_ENABLED=true` is the real test. |

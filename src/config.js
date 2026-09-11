@@ -78,6 +78,24 @@ export const config = {
     username: process.env.IG_USERNAME || "",
     password: process.env.IG_PASSWORD || "",
   },
+
+  // Every converted file also gets uploaded to a Supabase Storage bucket as a
+  // longer-lived copy, with its own independent TTL — Storage has no built-in
+  // object expiry, so that TTL is enforced in-process the same way VideoCache
+  // enforces the VPS-disk one (utils/supabaseStorage.js). Reuses the anon key
+  // from `supabase` above; needs no user auth of any kind, matching the fact
+  // that /downloads/<file> on the VPS is itself already unauthenticated.
+  //
+  // Explicit opt-in (default false), separate from `supabase.enabled`: the
+  // bucket and its policies (supabase/storage-schema.sql) must exist before
+  // this is safe to turn on, otherwise every conversion wastes time on a
+  // failing upload attempt.
+  supabaseStorage: {
+    enabled: process.env.SUPABASE_STORAGE_ENABLED === "true",
+    bucket: process.env.SUPABASE_STORAGE_BUCKET || "downloads",
+    ttlSeconds: Number(process.env.SUPABASE_STORAGE_TTL_SECONDS) || 7200,
+    uploadTimeoutMs: Number(process.env.SUPABASE_STORAGE_UPLOAD_TIMEOUT_MS) || 300_000,
+  },
 };
 
 export default config;
