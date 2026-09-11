@@ -6,6 +6,12 @@ const tokenFrom = (req) => req.header("x-supabase-token") || "";
 
 function fail(res, err, fallback) {
   if (err instanceof SupabaseError) {
+    // Previously silent: a missing/expired token or an RLS rejection returned
+    // its status to the client but left zero trace server-side, which is how
+    // "the table is empty" went undiagnosed — there was no way to tell a
+    // client that never calls this endpoint apart from one that calls it and
+    // fails every time. Never logs the token itself.
+    console.warn(`history ${err.status}: ${err.message}`);
     return res.status(err.status || 500).json({ success: false, error: err.message });
   }
   console.error(fallback, err);
@@ -44,6 +50,10 @@ export const AddHistory = async (req, res) => {
 
   try {
     const row = await History.add(tokenFrom(req), entry);
+    // A one-line success trace too: with no request logging anywhere in this
+    // app, a completely silent 201 was indistinguishable from the endpoint
+    // never being called at all when scanning `docker logs`.
+    console.log(`history: added entry (${entry.source || "unknown source"})`);
     res.status(201).json({ success: true, entry: row });
   } catch (err) {
     fail(res, err, "Failed to record history");
