@@ -73,8 +73,15 @@ export async function uploadAndTrack(filePath, objectName) {
         Authorization: `Bearer ${config.supabase.anonKey}`,
         "Content-Type": contentTypeFor(filePath),
         "Content-Length": String(size),
-        // Overwrite rather than error if the same object name is ever reused.
-        "x-upsert": "true",
+        // No x-upsert: it was here defensively for a name collision that
+        // cannot actually happen (objectName is always a fresh
+        // video_<timestamp>.<ext>), and confirmed by hand on 2026-09-11 that
+        // it is the entire cause of every "new row violates row-level
+        // security policy" 403 from this endpoint — upsert makes Supabase
+        // Storage check for an existing row first, which needs a SELECT
+        // policy on storage.objects that was deliberately never granted (the
+        // anon role only has insert/update/delete here). Removing the
+        // unneeded header is the fix, not adding a new grant.
       },
       body: fs.createReadStream(filePath),
       duplex: "half", // required by Node's fetch (undici) for a streamed body
