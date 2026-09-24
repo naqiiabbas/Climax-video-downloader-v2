@@ -42,10 +42,16 @@ Already discovered on this host (2026-09-01), no need to look them up again:
 | Caddy's Docker network | `uzy_default` |
 | Caddyfile on the host | `/opt/Uzy/caddy/Caddyfile` |
 | Caddyfile inside the container | `/etc/caddy/Caddyfile` (bind-mounted) |
+| **Site-block drop-in dir** | **`/opt/Uzy/caddy/conf.d/`** → `/etc/caddy/conf.d/` |
 | Caddy container | `uzy-caddy-1` |
 
-The Caddyfile is bind-mounted, so editing it on the host is immediately visible
-to the container — no rebuild, no copy step.
+Both paths are bind-mounted, so editing on the host is immediately visible to
+the container — no rebuild, no copy step.
+
+Line 20 of the Caddyfile is `import /etc/caddy/conf.d/*.caddy`. **This
+service's site block belongs in `conf.d`, never in the Caddyfile itself** —
+see the warning in Step 4. The filename must end in `.caddy` or the import
+glob will not pick it up.
 
 Confirm the container name is still free before starting:
 
@@ -156,12 +162,10 @@ cd /opt/video-downloader-api
 sed -i "s|^PUBLIC_BASE_URL=.*|PUBLIC_BASE_URL=https://$HOST|" .env
 grep '^PUBLIC_BASE_URL=' .env
 
-# Back up the Caddyfile — it also serves the live uzy site
-sudo cp /opt/Uzy/caddy/Caddyfile /opt/Uzy/caddy/Caddyfile.bak
-
-# Append the site block with the hostname filled in
-sudo tee -a /opt/Uzy/caddy/Caddyfile > /dev/null <<EOF
-
+# Drop the site block into conf.d. The main Caddyfile is NOT touched, so
+# nothing here can affect the live uzy site, and a later Caddyfile restore
+# cannot silently delete this service's block (see the warning below).
+sudo tee /opt/Uzy/caddy/conf.d/video-downloader.caddy > /dev/null <<EOF
 $HOST {
 	reverse_proxy video_downloader_api:8000 {
 		transport http {
@@ -185,6 +189,38 @@ docker compose -f docker-compose.vps.yml up -d --force-recreate
 Certificate issuance takes a few seconds on the first request. If it fails with
 a rate-limit error, `sslip.io` works the same way — swap the suffix and reload.
 
+> ### ⚠️ Never append this block to the main Caddyfile
+>
+> Earlier versions of this guide told you to `tee -a` it onto
+> `/opt/Uzy/caddy/Caddyfile` after taking a `.bak` copy. That combination
+> took the API offline for 13 days:
+>
+> | When | What happened |
+> |---|---|
+> | 2026-09-11 05:24 | Caddy renews the certificate normally |
+> | 2026-09-11 ~06:08 | A redeploy restores `Caddyfile.bak` — a copy taken **before** the block was appended, so the block vanishes while every `vidpex.com` block survives |
+> | 2026-09-11 → 09-24 | API healthy and running, but Caddy has no site block for the hostname, so it has no certificate for that SNI |
+>
+> The symptom is a **TLS handshake failure**, not an HTTP error — Postman
+> reports `TLSV1_ALERT_INTERNAL_ERROR ... SSL alert number 80` and
+> `openssl s_client` reports `no peer certificate available`. It looks like an
+> expired or broken certificate. It is not: alert 80 here means Caddy has **no
+> site block for that hostname**, so there is nothing to serve.
+>
+> One command distinguishes it from every certificate problem:
+>
+> ```bash
+> grep -rn "<your-hostname>" /opt/Uzy/caddy/Caddyfile /opt/Uzy/caddy/conf.d/
+> ```
+>
+> No match means the block is gone. Recreate the `conf.d` file and reload — the
+> certificate is still on disk under
+> `/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/` and loads
+> instantly, with no ACME round trip.
+>
+> Keeping the block in `conf.d` makes this unreachable: the main Caddyfile is
+> never edited, so restoring it cannot remove this service.
+
 Moving to a real domain later is a one-line change to that block plus a reload;
 Caddy issues the new certificate itself.
 
@@ -193,17 +229,12 @@ Caddy issues the new certificate itself.
 **If you do have a domain:** point a DNS A record for `downloader.example.com`
 at the VPS **first**, or Caddy's certificate request will fail.
 
-Back up the Caddyfile first — it also serves the live uzy site:
+Put the block from [`Caddyfile.snippet`](Caddyfile.snippet) in its own
+`conf.d` file — again, **not** in the main Caddyfile — with your real subdomain
+substituted:
 
 ```bash
-sudo cp /opt/Uzy/caddy/Caddyfile /opt/Uzy/caddy/Caddyfile.bak
-```
-
-Append the block from [`Caddyfile.snippet`](Caddyfile.snippet), with your real
-subdomain substituted:
-
-```bash
-sudo nano /opt/Uzy/caddy/Caddyfile
+sudo nano /opt/Uzy/caddy/conf.d/video-downloader.caddy
 ```
 
 Then validate, and reload **only if validation passes**:
@@ -213,11 +244,13 @@ docker exec uzy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
 docker exec uzy-caddy-1 caddy reload  --config /etc/caddy/Caddyfile
 ```
 
-If validation fails, restore the backup and try again — do not reload a config
-that failed validation:
+If validation fails, fix or delete the file you just created and validate again
+— do not reload a config that failed validation. Because the change is confined
+to one drop-in file, there is no backup to restore and the live uzy site was
+never at risk:
 
 ```bash
-sudo cp /opt/Uzy/caddy/Caddyfile.bak /opt/Uzy/caddy/Caddyfile
+sudo rm /opt/Uzy/caddy/conf.d/video-downloader.caddy
 ```
 
 **Use `reload`, never `restart`.** A reload is graceful and does not interrupt
@@ -250,12 +283,19 @@ that matters most.**
 docker compose -f docker-compose.vps.yml down
 ```
 
-Removes only this service. Then restore the Caddyfile backup and reload:
+Removes only this service. Then drop its site block and reload:
 
 ```bash
-sudo cp /opt/Uzy/caddy/Caddyfile.bak /opt/Uzy/caddy/Caddyfile
-docker exec uzy-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+sudo rm -f /opt/Uzy/caddy/conf.d/video-downloader.caddy
+docker exec uzy-caddy-1 caddy validate --config /etc/caddy/Caddyfile
+docker exec uzy-caddy-1 caddy reload  --config /etc/caddy/Caddyfile
 ```
+
+**Do not restore `Caddyfile.bak`.** That is what broke this service on
+2026-09-11: the backup predates the site block, so restoring it removes this
+API while looking like a clean rollback. Deleting the one `conf.d` file is the
+complete and correct undo — the main Caddyfile was never edited, so there is
+nothing in it to roll back.
 
 The existing stack is unaffected because it was never modified.
 
@@ -296,6 +336,42 @@ du -sh /opt/video-downloader-api/downloads
 ```
 
 Lower `DEFAULT_QUALITY` if it grows faster than you like.
+
+**"Could not send request" / TLS errors from the client.** If Postman reports
+`TLSV1_ALERT_INTERNAL_ERROR ... SSL alert number 80`, or `curl` fails with
+`SSL connect error` while port 443 is open, the cause is almost never the
+certificate. Work down this list:
+
+```bash
+# 1. Is the site block still configured? (the usual answer)
+grep -rn "nip.io" /opt/Uzy/caddy/Caddyfile /opt/Uzy/caddy/conf.d/
+
+# 2. Is Caddy serving the other sites? If yes, Caddy and TLS are healthy
+#    and the problem is specific to this hostname.
+curl -sI https://vidpex.com | head -1
+
+# 3. Is the certificate still on disk? It survives even when the block does not.
+docker exec uzy-caddy-1 ls /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/
+
+# 4. Is the API container up and on Caddy's network?
+docker ps --filter name=video_downloader_api
+docker inspect video_downloader_api --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+```
+
+No match on step 1 means the block was deleted — recreate
+`/opt/Uzy/caddy/conf.d/video-downloader.caddy` from Step 4 and reload. The
+certificate loads from disk instantly; there is no ACME wait and no rate-limit
+risk.
+
+Two red herrings worth naming, because both cost time during the 2026-09-11
+incident:
+
+- **A 308 redirect on port 80 does not prove the block exists.** Caddy
+  redirects HTTP→HTTPS for *any* Host header, including hostnames it has never
+  heard of. Test with a bogus host to confirm: `curl -I -H "Host: nope.example"
+  http://<ip>/` returns the same 308.
+- **Check `df -h` but do not assume a full disk.** Converted files are capped
+  by `CACHE_TTL_SECONDS` and in practice sit in the tens of MB, not GB.
 
 **Logs.** Capped at 3 × 10MB by the compose file.
 

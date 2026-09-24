@@ -1,10 +1,19 @@
-# Block to append to the existing Caddyfile on the VPS:
+# Save this as its own drop-in file on the VPS:
 #
-#   /opt/Uzy/caddy/Caddyfile        (host path)
-#   /etc/caddy/Caddyfile            (as seen inside uzy-caddy-1)
+#   /opt/Uzy/caddy/conf.d/video-downloader.caddy   (host path)
+#   /etc/caddy/conf.d/video-downloader.caddy       (inside uzy-caddy-1)
 #
-# It is bind-mounted, so host edits are visible to the container immediately.
-# BACK IT UP FIRST — this same file serves the live uzy site.
+# Both are bind-mounted, so host edits are visible to the container
+# immediately. Line 20 of the main Caddyfile is
+# `import /etc/caddy/conf.d/*.caddy`, so the filename MUST end in .caddy.
+#
+# DO NOT append this to /opt/Uzy/caddy/Caddyfile. That file also serves the
+# live uzy site, and the documented "back it up first, restore it to roll
+# back" pattern silently deletes this block: the backup predates it. That is
+# exactly what took this API offline from 2026-09-11 to 2026-09-24 — the
+# symptom was a TLS handshake failure (alert 80, "no peer certificate
+# available") that looked like a broken certificate but was really a missing
+# site block. Keeping it in conf.d makes that impossible.
 #
 # ---------------------------------------------------------------------------
 # HOSTNAME: <VPS_IP>.nip.io
