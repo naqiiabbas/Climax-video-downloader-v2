@@ -4,155 +4,476 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Cookie Admin — Video Downloader API</title>
+<meta name="theme-color" content="#1552F0">
+<title>Cookie Admin</title>
 <style>
   :root {
-    --bg: #f6f7f9; --card: #fff; --fg: #15181d; --muted: #667085;
-    --line: #e3e6ea; --accent: #2563eb; --accent-fg: #fff;
-    --ok-bg: #e8f6ee; --ok-fg: #0f6b3d; --ok-line: #a8dcbf;
-    --warn-bg: #fdf3e2; --warn-fg: #8a5a08; --warn-line: #f0d2a0;
-    --err-bg: #fdeceb; --err-fg: #9b2220; --err-line: #f2b8b5;
-    --radius: 10px;
+    /* One vivid azure ramp carries the whole identity. 1552F0 rather than the
+       default framework blue, which is what makes stock admin pages look alike. */
+    --brand-700: #0B3AC4;
+    --brand-600: #1552F0;
+    --brand-500: #2E6BFF;
+    --brand-400: #5B8DFF;
+    --brand-100: #D8E5FF;
+    --brand-50:  #EEF4FF;
+
+    --page-a: #F3F8FF;
+    --page-b: #E4EEFF;
+    --surface: #FFFFFF;
+    --surface-sunken: #F7FAFF;
+    --ink: #0A1A33;
+    --ink-soft: #5A6E8C;
+    --ink-faint: #8497B2;
+    --line: #DDE8FA;
+    --line-strong: #C3D6F5;
+
+    --good: #0E8A5F;  --good-bg: #E6F7F0;  --good-line: #A8E3CB;
+    --warn: #A25B06;  --warn-bg: #FEF5E7;  --warn-line: #F3D6A4;
+    --bad:  #C62B28;  --bad-bg:  #FDEEEE;  --bad-line:  #F5C0BE;
+
+    /* Blue-tinted shadows. Neutral grey shadows are a big part of the flat,
+       generic look; tinting them to the brand hue makes the page feel lit. */
+    --lift-1: 0 1px 2px rgba(10,26,51,.05), 0 2px 8px rgba(21,82,240,.05);
+    --lift-2: 0 2px 4px rgba(10,26,51,.05), 0 12px 28px rgba(21,82,240,.10);
+    --lift-3: 0 8px 20px rgba(10,26,51,.07), 0 30px 60px rgba(21,82,240,.16);
+    --ring: 0 0 0 4px rgba(46,107,255,.20);
+    --r-sm: 10px; --r-md: 14px; --r-lg: 20px;
   }
+
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #14161a; --card: #1c1f25; --fg: #e8eaed; --muted: #98a2b3;
-      --line: #2c3139; --accent: #3b82f6;
-      --ok-bg: #12301f; --ok-fg: #86e0ae; --ok-line: #24623e;
-      --warn-bg: #33270f; --warn-fg: #f2c879; --warn-line: #6b5216;
-      --err-bg: #331917; --err-fg: #f5a6a2; --err-line: #6d2a26;
+      --brand-700: #2E6BFF;
+      --brand-600: #3F79FF;
+      --brand-500: #5B8DFF;
+      --brand-400: #7BA5FF;
+      --brand-100: #1B2F53;
+      --brand-50:  #14243F;
+
+      --page-a: #050B17;
+      --page-b: #0A1628;
+      --surface: #101C31;
+      --surface-sunken: #0B1526;
+      --ink: #E9F0FC;
+      --ink-soft: #94A7C4;
+      --ink-faint: #6B7F9E;
+      --line: #1E2F4C;
+      --line-strong: #2B4067;
+
+      --good: #55D3A3;  --good-bg: #0D2A20;  --good-line: #1F5943;
+      --warn: #F0BE72;  --warn-bg: #2C220F;  --warn-line: #5C4718;
+      --bad:  #F59794;  --bad-bg:  #2E1615;  --bad-line:  #632825;
+
+      --lift-1: 0 1px 2px rgba(0,0,0,.34);
+      --lift-2: 0 2px 6px rgba(0,0,0,.36), 0 14px 32px rgba(0,0,0,.34);
+      --lift-3: 0 10px 26px rgba(0,0,0,.44), 0 34px 70px rgba(0,0,0,.42);
+      --ring: 0 0 0 4px rgba(91,141,255,.26);
     }
   }
+
   * { box-sizing: border-box; }
+
+  html, body { min-height: 100%; }
+
   body {
-    margin: 0; padding: 24px 16px 64px;
-    background: var(--bg); color: var(--fg);
-    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    color: var(--ink);
+    background: var(--page-b);
+    font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 620px; margin: 0 auto; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
-  .card {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 18px; margin-bottom: 16px;
+
+  /* Two soft radial washes over a vertical ramp. Gives the page depth without
+     an image, and keeps the blue present even in wide empty areas. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(900px 620px at 82% -8%, rgba(46,107,255,.20), transparent 62%),
+      radial-gradient(760px 520px at 4% 4%, rgba(91,141,255,.16), transparent 58%),
+      linear-gradient(180deg, var(--page-a), var(--page-b));
   }
-  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em;
-       color: var(--muted); margin: 0 0 12px; font-weight: 600; }
-  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+
+  .shell { max-width: 660px; margin: 0 auto; padding: 32px 20px 72px; }
+
+  /* ── Brand mark ─────────────────────────────────────────────────────── */
+  .mark {
+    width: 44px; height: 44px;
+    border-radius: 13px;
+    display: grid; place-items: center;
+    color: #fff;
+    background: linear-gradient(145deg, var(--brand-500), var(--brand-700));
+    box-shadow: 0 4px 12px rgba(21,82,240,.34), inset 0 1px 0 rgba(255,255,255,.28);
+    flex: none;
+  }
+  .mark svg { width: 23px; height: 23px; }
+
+  /* ── Sign in ────────────────────────────────────────────────────────── */
+  .gate {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 24px 20px 56px;
+  }
+  .gate-card {
+    width: 100%; max-width: 408px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--lift-3);
+    overflow: hidden;
+  }
+  /* A slim gradient rule along the top edge, instead of a heavy coloured
+     header block. Reads as considered rather than decorated. */
+  .gate-card::before {
+    content: "";
+    display: block; height: 4px;
+    background: linear-gradient(90deg, var(--brand-700), var(--brand-500) 48%, var(--brand-400));
+  }
+  .gate-body { padding: 30px 30px 28px; }
+  .gate .mark { margin-bottom: 20px; }
+  .gate h1 { font-size: 23px; letter-spacing: -.02em; margin: 0 0 6px; }
+  .gate p.lede { color: var(--ink-soft); font-size: 14px; margin: 0 0 24px; }
+
+  label {
+    display: block;
+    font-size: 13px; font-weight: 600;
+    color: var(--ink-soft);
+    margin-bottom: 7px;
+  }
+
+  .field { position: relative; }
   input[type=password], input[type=text] {
-    width: 100%; padding: 10px 12px; font: inherit;
-    border: 1px solid var(--line); border-radius: 8px;
-    background: var(--bg); color: var(--fg);
+    width: 100%;
+    padding: 12px 14px;
+    font: inherit;
+    color: var(--ink);
+    background: var(--surface-sunken);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-sm);
+    transition: border-color .16s, box-shadow .16s, background .16s;
   }
-  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input::placeholder { color: var(--ink-faint); }
+  input:hover { border-color: var(--line-strong); }
+  input:focus {
+    outline: none;
+    background: var(--surface);
+    border-color: var(--brand-500);
+    box-shadow: var(--ring);
+  }
+  .field.has-toggle input { padding-right: 46px; }
+  .peek {
+    position: absolute; top: 50%; right: 6px;
+    transform: translateY(-50%);
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border: 0; border-radius: 8px;
+    background: transparent; color: var(--ink-faint);
+    cursor: pointer; padding: 0;
+    transition: color .16s, background .16s;
+  }
+  .peek:hover { color: var(--brand-600); background: var(--brand-50); }
+  .peek svg { width: 18px; height: 18px; }
+
+  /* ── Buttons ────────────────────────────────────────────────────────── */
   button {
-    font: inherit; font-weight: 600; padding: 10px 16px; cursor: pointer;
-    border: 1px solid transparent; border-radius: 8px;
-    background: var(--accent); color: var(--accent-fg);
+    font: inherit; font-weight: 600;
+    border: 0; border-radius: var(--r-sm);
+    cursor: pointer;
+    padding: 12px 20px;
+    color: #fff;
+    background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+    box-shadow: 0 1px 2px rgba(10,26,51,.12), inset 0 1px 0 rgba(255,255,255,.22);
+    transition: transform .12s, box-shadow .16s, filter .16s, opacity .16s;
   }
-  button.ghost { background: transparent; color: var(--muted); border-color: var(--line); }
-  button:disabled { opacity: .55; cursor: not-allowed; }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .grow { flex: 1; min-width: 180px; }
-  .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
-  .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px;
-         font-size: 13px; border: 1px solid; white-space: pre-wrap;
-         word-break: break-word; }
-  .msg.ok   { background: var(--ok-bg);   color: var(--ok-fg);   border-color: var(--ok-line); }
-  .msg.warn { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-line); }
-  .msg.err  { background: var(--err-bg);  color: var(--err-fg);  border-color: var(--err-line); }
-  .pill { display: inline-block; padding: 3px 9px; border-radius: 99px;
-          font-size: 12px; font-weight: 700; border: 1px solid; }
-  .pill.ok  { background: var(--ok-bg);  color: var(--ok-fg);  border-color: var(--ok-line); }
-  .pill.err { background: var(--err-bg); color: var(--err-fg); border-color: var(--err-line); }
+  button:hover:not(:disabled) {
+    filter: brightness(1.06);
+    box-shadow: 0 4px 14px rgba(21,82,240,.34), inset 0 1px 0 rgba(255,255,255,.22);
+  }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:focus-visible { outline: none; box-shadow: var(--ring); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.block { width: 100%; }
+  button.quiet {
+    background: transparent; color: var(--ink-soft);
+    border: 1.5px solid var(--line);
+    box-shadow: none; padding: 9px 15px; font-size: 14px;
+  }
+  button.quiet:hover:not(:disabled) {
+    filter: none; color: var(--brand-600);
+    border-color: var(--brand-400); background: var(--brand-50);
+    box-shadow: none;
+  }
+
+  /* ── Dashboard ──────────────────────────────────────────────────────── */
+  .topbar {
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 26px;
+  }
+  .topbar h1 { font-size: 20px; letter-spacing: -.02em; margin: 0; }
+  .topbar .sub { font-size: 13px; color: var(--ink-soft); margin: 1px 0 0; }
+  .topbar .spacer { flex: 1; }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    box-shadow: var(--lift-1);
+    padding: 22px;
+    margin-bottom: 18px;
+  }
+  .panel h2 {
+    font-size: 16px; font-weight: 650; letter-spacing: -.01em;
+    margin: 0 0 4px;
+  }
+  .panel .hint { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 18px; }
+
+  /* Status is the first question the page answers, so it gets real presence
+     rather than a small badge tucked in a corner. */
+  .state {
+    display: flex; gap: 15px; align-items: flex-start;
+    padding: 17px;
+    border-radius: var(--r-sm);
+    border: 1.5px solid var(--line);
+    background: var(--surface-sunken);
+  }
+  .state.is-good { border-color: var(--good-line); background: var(--good-bg); }
+  .state.is-bad  { border-color: var(--bad-line);  background: var(--bad-bg); }
+  .state-icon {
+    width: 38px; height: 38px; border-radius: 11px;
+    display: grid; place-items: center; flex: none;
+    background: var(--surface); color: var(--ink-faint);
+    box-shadow: var(--lift-1);
+  }
+  .state.is-good .state-icon { color: var(--good); }
+  .state.is-bad  .state-icon { color: var(--bad); }
+  .state-icon svg { width: 20px; height: 20px; }
+  .state-title { font-weight: 650; font-size: 15px; margin: 2px 0 3px; }
+  .state.is-good .state-title { color: var(--good); }
+  .state.is-bad  .state-title { color: var(--bad); }
+  .state-body { font-size: 13.5px; color: var(--ink-soft); }
+
+  /* ── Drop zone ──────────────────────────────────────────────────────── */
   .drop {
-    border: 2px dashed var(--line); border-radius: var(--radius);
-    padding: 26px 16px; text-align: center; color: var(--muted);
-    cursor: pointer; transition: border-color .15s, background .15s;
+    border: 2px dashed var(--line-strong);
+    border-radius: var(--r-md);
+    background: var(--surface-sunken);
+    padding: 30px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .16s, background .16s, transform .12s;
   }
-  .drop:hover, .drop.over { border-color: var(--accent); background: var(--bg); }
-  .drop strong { color: var(--fg); display: block; margin-bottom: 4px; }
-  .steps { margin: 8px 0 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
-  .steps li { margin-bottom: 5px; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
-         background: var(--bg); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); }
-  .head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .drop:hover { border-color: var(--brand-400); background: var(--brand-50); }
+  .drop:focus-visible { outline: none; box-shadow: var(--ring); border-color: var(--brand-500); }
+  .drop.over {
+    border-color: var(--brand-500); background: var(--brand-50);
+    border-style: solid; transform: scale(1.012);
+  }
+  .drop.filled { border-style: solid; border-color: var(--brand-400); background: var(--brand-50); }
+  .drop-icon {
+    width: 46px; height: 46px; margin: 0 auto 12px;
+    border-radius: 14px; display: grid; place-items: center;
+    color: #fff;
+    background: linear-gradient(145deg, var(--brand-500), var(--brand-700));
+    box-shadow: 0 5px 14px rgba(21,82,240,.30), inset 0 1px 0 rgba(255,255,255,.26);
+  }
+  .drop-icon svg { width: 22px; height: 22px; }
+  .drop-title { font-weight: 650; font-size: 14.5px; }
+  .drop-meta { font-size: 13px; color: var(--ink-soft); margin-top: 3px; }
+
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 190px; }
+
+  /* ── Messages ───────────────────────────────────────────────────────── */
+  .msg {
+    margin-top: 14px; padding: 12px 14px;
+    border-radius: var(--r-sm);
+    border: 1.5px solid var(--line);
+    background: var(--surface-sunken);
+    font-size: 13.5px; white-space: pre-wrap; word-break: break-word;
+  }
+  .msg.ok   { color: var(--good); background: var(--good-bg); border-color: var(--good-line); }
+  .msg.warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+  .msg.err  { color: var(--bad);  background: var(--bad-bg);  border-color: var(--bad-line); }
+  .msg strong { display: block; margin-bottom: 3px; font-weight: 650; }
+
+  /* ── Guide ──────────────────────────────────────────────────────────── */
+  details.guide {
+    margin-top: 18px;
+    border-top: 1px solid var(--line);
+    padding-top: 15px;
+  }
+  details.guide summary {
+    cursor: pointer; font-size: 13.5px; font-weight: 600;
+    color: var(--brand-600); list-style: none;
+  }
+  details.guide summary::-webkit-details-marker { display: none; }
+  details.guide summary::before {
+    content: "+"; display: inline-block; width: 16px;
+    font-weight: 700;
+  }
+  details.guide[open] summary::before { content: "\2212"; }
+  .guide ol { margin: 13px 0 0; padding-left: 20px; font-size: 13.5px; color: var(--ink-soft); }
+  .guide li { margin-bottom: 7px; }
+  .guide li::marker { color: var(--brand-500); font-weight: 700; }
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    background: var(--brand-50); color: var(--brand-700);
+    padding: 1.5px 6px; border-radius: 5px;
+    border: 1px solid var(--brand-100);
+  }
+
+  .spin {
+    display: inline-block; width: 13px; height: 13px;
+    margin-right: 7px; vertical-align: -2px;
+    border: 2px solid rgba(255,255,255,.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .fade { animation: fade .28s ease both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Cookie Admin</h1>
-  <p class="sub">Upload a <code>cookies.txt</code> so Instagram downloads work.</p>
 
-  <!-- Login -->
-  <section id="login" class="card">
-    <h2>Sign in</h2>
-    <form id="login-form">
-      <label for="pw">Admin password</label>
-      <div class="row">
-        <input class="grow" type="password" id="pw" autocomplete="current-password"
-               placeholder="ADMIN_PASSWORD" required>
-        <button type="submit" id="login-btn">Sign in</button>
+<!-- ══ Sign in ═══════════════════════════════════════════════════════════ -->
+<div class="gate" id="gate">
+  <div class="gate-card fade">
+    <div class="gate-body">
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="10" rx="2.5"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
       </div>
-    </form>
-    <div id="login-msg" class="msg err" hidden></div>
+
+      <h1>Cookie Admin</h1>
+      <p class="lede">Sign in to manage the Instagram cookie file.</p>
+
+      <form id="login-form" novalidate>
+        <label for="pw">Admin password</label>
+        <div class="field has-toggle">
+          <input type="password" id="pw" autocomplete="current-password"
+                 placeholder="Enter your password" required>
+          <button type="button" class="peek" id="peek" aria-label="Show password">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+        <div style="height:18px"></div>
+        <button type="submit" class="block" id="login-btn">Sign in</button>
+      </form>
+
+      <div id="login-msg" class="msg err" hidden></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Dashboard ═════════════════════════════════════════════════════════ -->
+<div class="shell" id="dash" hidden>
+  <header class="topbar fade">
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="10" rx="2.5"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+    </div>
+    <div>
+      <h1>Cookie Admin</h1>
+      <p class="sub">Instagram authentication</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="quiet" id="signout" type="button">Sign out</button>
+  </header>
+
+  <section class="panel fade">
+    <h2>Current status</h2>
+    <p class="hint">Whether the server holds a cookie file it can actually use.</p>
+    <div class="state" id="state">
+      <div class="state-icon" id="state-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"></circle>
+          <path d="M12 8v4M12 16h.01"></path>
+        </svg>
+      </div>
+      <div>
+        <div class="state-title" id="state-title">Checking</div>
+        <div class="state-body" id="state-body">Reading the current cookie file.</div>
+      </div>
+    </div>
   </section>
 
-  <!-- Dashboard -->
-  <div id="dash" hidden>
-    <section class="card">
-      <div class="head">
-        <h2 style="margin:0">Current status</h2>
-        <button class="ghost" id="signout" type="button">Sign out</button>
-      </div>
-      <p style="margin:14px 0 0">
-        Cookie jar: <span id="cookie-pill" class="pill">checking…</span>
-      </p>
-      <p class="note" id="cookie-detail"></p>
-    </section>
+  <section class="panel fade">
+    <h2>Upload a cookie file</h2>
+    <p class="hint">Netscape format, .txt, up to 5 MB.</p>
 
-    <section class="card">
-      <h2>Upload cookies.txt</h2>
-      <div class="drop" id="drop" tabindex="0" role="button"
-           aria-label="Choose or drop a cookies.txt file">
-        <strong>Choose a file or drop it here</strong>
-        Netscape format, .txt, up to 5 MB
+    <div class="drop" id="drop" tabindex="0" role="button"
+         aria-label="Choose a cookie file or drop one here">
+      <div class="drop-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <path d="M7 9l5-5 5 5"></path>
+          <path d="M12 4v12"></path>
+        </svg>
       </div>
-      <input type="file" id="file" accept=".txt,text/plain" hidden>
-      <div class="row" style="margin-top:12px">
-        <button id="upload-btn" type="button" disabled>Upload</button>
-        <span class="note" id="file-name" style="margin:0"></span>
-      </div>
-      <div id="upload-msg" class="msg" hidden></div>
+      <div class="drop-title" id="drop-title">Choose a file or drop it here</div>
+      <div class="drop-meta" id="drop-meta">Exported from a browser where you are logged in</div>
+    </div>
+    <input type="file" id="file" accept=".txt,text/plain" hidden>
 
-      <p class="note"><strong>How to export one:</strong></p>
-      <ol class="steps">
-        <li>Log in to Instagram in a browser.</li>
-        <li>Install a “Get cookies.txt” extension (Chrome or Firefox).</li>
-        <li>Export for <code>instagram.com</code> — the file must start with
-            <code># Netscape HTTP Cookie File</code>.</li>
-        <li>Upload it here. Cookies expire after a few weeks, so repeat this
-            when Instagram stops working.</li>
+    <div class="row" style="margin-top:14px">
+      <button id="upload-btn" type="button" disabled>Upload</button>
+    </div>
+    <div id="upload-msg" class="msg" hidden></div>
+
+    <details class="guide">
+      <summary>How do I export one?</summary>
+      <ol>
+        <li>Log in to Instagram in your browser.</li>
+        <li>Install a "Get cookies.txt" extension for Chrome or Firefox.</li>
+        <li>Export the cookies for <code>instagram.com</code>. The file has to
+            begin with <code># Netscape HTTP Cookie File</code>.</li>
+        <li>Upload it here, then run the test below.</li>
       </ol>
-    </section>
+    </details>
+  </section>
 
-    <section class="card">
-      <h2>Test Instagram</h2>
-      <p class="note" style="margin:0 0 10px">
-        Runs a real extraction through the same path the mobile app uses. A jar
-        can be valid Netscape format and still be logged out, so “uploaded”
-        does not mean “working”.
-      </p>
-      <label for="test-url">Instagram post or reel URL</label>
-      <div class="row">
-        <input class="grow" type="text" id="test-url"
-               placeholder="https://www.instagram.com/p/...">
-        <button id="test-btn" type="button">Test</button>
-      </div>
-      <div id="test-msg" class="msg" hidden></div>
-    </section>
-  </div>
+  <section class="panel fade">
+    <h2>Test Instagram</h2>
+    <p class="hint">
+      A cookie file can look perfectly valid and still be signed out, so uploading
+      one is not proof that it works. This runs a real download through the same
+      path the mobile app uses.
+    </p>
+    <label for="test-url">Instagram post or reel link</label>
+    <div class="row">
+      <input class="grow" type="text" id="test-url"
+             placeholder="https://www.instagram.com/p/...">
+      <button id="test-btn" type="button">Run test</button>
+    </div>
+    <div id="test-msg" class="msg" hidden></div>
+  </section>
 </div>
 
 <script>
@@ -165,21 +486,40 @@
 
   // sessionStorage, not localStorage: scoped to this tab and dropped when the
   // tab closes, so the password does not outlive the sitting. Wrapped because
-  // private-mode browsers throw on access rather than returning null.
+  // private mode browsers throw on access rather than returning null.
   function remember(v) { try { sessionStorage.setItem("vd_admin_pw", v); } catch (e) {} }
   function recall() { try { return sessionStorage.getItem("vd_admin_pw") || ""; } catch (e) { return ""; } }
   function forget() { try { sessionStorage.removeItem("vd_admin_pw"); } catch (e) {} }
 
-  function show(el, text, kind) {
-    el.textContent = text;
+  function show(el, title, text, kind) {
     el.className = "msg " + (kind || "");
+    el.textContent = "";
+    if (title) {
+      var b = document.createElement("strong");
+      b.textContent = title;
+      el.appendChild(b);
+    }
+    if (text) el.appendChild(document.createTextNode(text));
     el.hidden = false;
   }
   function hide(el) { el.hidden = true; }
 
+  function busy(btn, label) {
+    btn.disabled = true;
+    btn.textContent = "";
+    var s = document.createElement("span");
+    s.className = "spin";
+    btn.appendChild(s);
+    btn.appendChild(document.createTextNode(label));
+  }
+  function idle(btn, label, disabled) {
+    btn.disabled = !!disabled;
+    btn.textContent = label;
+  }
+
   // Absolute paths on purpose: the page is reachable as both /admin and
   // /admin/, and a relative "admin/status" would resolve to
-  // /admin/admin/status under the trailing-slash form.
+  // /admin/admin/status under the trailing slash form.
   function api(path, opts) {
     opts = opts || {};
     opts.headers = Object.assign({ "x-admin-password": pw }, opts.headers || {});
@@ -190,6 +530,16 @@
     });
   }
 
+  // ── Password visibility ──────────────────────────────────────────────
+  $("peek").addEventListener("click", function () {
+    var input = $("pw");
+    var showing = input.type === "text";
+    input.type = showing ? "password" : "text";
+    this.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    input.focus();
+  });
+
+  // ── Sign in ──────────────────────────────────────────────────────────
   function enter(password) {
     pw = password;
     return api("/admin/status").then(function (res) {
@@ -199,7 +549,7 @@
         throw res;
       }
       remember(password);
-      $("login").hidden = true;
+      $("gate").hidden = true;
       $("dash").hidden = false;
       paintStatus(res.body);
       return res;
@@ -208,51 +558,69 @@
 
   $("login-form").addEventListener("submit", function (e) {
     e.preventDefault();
-    var btn = $("login-btn");
     var msg = $("login-msg");
+    var value = $("pw").value;
     hide(msg);
-    btn.disabled = true;
-    btn.textContent = "Checking...";
-    enter($("pw").value)
+
+    if (!value) {
+      show(msg, null, "Enter the admin password to continue.", "err");
+      return;
+    }
+
+    busy($("login-btn"), "Checking");
+    enter(value)
       .catch(function (res) {
         var b = (res && res.body) || {};
-        var text = b.error || "Could not sign in";
-        if (b.attempts_remaining != null) {
-          text += " — " + b.attempts_remaining + " attempt(s) left before a 15-minute lockout.";
+        var title = "Could not sign in";
+        var text = b.error || "Something went wrong. Try again.";
+        if (b.error_code === "bad_password") {
+          title = "Wrong password";
+          text = b.attempts_remaining != null
+            ? "You have " + b.attempts_remaining + " more attempts before this address is locked out for 15 minutes."
+            : "Check the value of ADMIN_PASSWORD on the server.";
+        } else if (b.error_code === "locked_out") {
+          title = "Locked out";
+          text = b.error;
+        } else if (b.error_code === "admin_not_configured") {
+          title = "Not set up yet";
+          text = "No admin password is configured on the server. Set ADMIN_PASSWORD in .env, then recreate the container.";
         }
-        show(msg, text, "err");
+        show(msg, title, text, "err");
+        $("pw").select();
       })
-      .then(function () {
-        btn.disabled = false;
-        btn.textContent = "Sign in";
-      });
+      .then(function () { idle($("login-btn"), "Sign in"); });
   });
 
   $("signout").addEventListener("click", function () {
     pw = "";
     forget();
     $("dash").hidden = true;
-    $("login").hidden = false;
+    $("gate").hidden = false;
     $("pw").value = "";
     $("pw").focus();
   });
 
+  // ── Status ───────────────────────────────────────────────────────────
   var REASONS = {
-    ok: "A usable cookie jar is in place. Instagram should work.",
-    missing: "No cookies.txt on the server yet. Upload one below.",
-    empty: "cookies.txt exists but is empty. That is the normal state after a fresh deploy — the file is created for the Docker bind mount. Upload a real export.",
-    "no-entries": "The file has the Netscape header but no cookie lines in it.",
-    "not-netscape-format": "Not a Netscape-format export. Use a “Get cookies.txt” extension rather than saving the page.",
-    "not-a-file": "The cookies.txt path is a directory, not a file. Check the bind mount.",
-    unreadable: "The server cannot read cookies.txt. Check its file permissions."
+    ok: "A usable cookie file is in place, so Instagram downloads should work.",
+    missing: "There is no cookie file on the server yet. Upload one below.",
+    empty: "The cookie file exists but is empty. That is normal right after a deploy, because the file is created for the Docker mount. Upload a real export.",
+    "no-entries": "The file carries the Netscape header but contains no cookies.",
+    "not-netscape-format": "This is not a Netscape format export. Use a browser extension rather than saving the page itself.",
+    "not-a-file": "The cookie path points at a folder instead of a file. Check the Docker mount.",
+    unreadable: "The server cannot read the cookie file. Check its permissions."
   };
+
+  var ICON_GOOD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M8.5 12.5l2.5 2.5 4.5-5"></path></svg>';
+  var ICON_BAD  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v5M12 16h.01"></path></svg>';
 
   function paintStatus(body) {
     var c = (body && body.cookies) || {};
-    var pill = $("cookie-pill");
-    pill.textContent = c.usable ? "working" : "not set up";
-    pill.className = "pill " + (c.usable ? "ok" : "err");
-    $("cookie-detail").textContent = REASONS[c.reason] || ("State: " + (c.reason || "unknown"));
+    var good = !!c.usable;
+    $("state").className = "state " + (good ? "is-good" : "is-bad");
+    $("state-icon").innerHTML = good ? ICON_GOOD : ICON_BAD;
+    $("state-title").textContent = good ? "Instagram is ready" : "Instagram is not ready";
+    $("state-body").textContent = REASONS[c.reason] || ("Current state: " + (c.reason || "unknown"));
   }
 
   function refreshStatus() {
@@ -261,12 +629,21 @@
     });
   }
 
+  // ── Choosing a file ──────────────────────────────────────────────────
   var drop = $("drop");
   var fileInput = $("file");
 
   function choose(f) {
     picked = f;
-    $("file-name").textContent = f ? f.name + " (" + Math.ceil(f.size / 1024) + " KB)" : "";
+    if (f) {
+      drop.classList.add("filled");
+      $("drop-title").textContent = f.name;
+      $("drop-meta").textContent = Math.max(1, Math.ceil(f.size / 1024)) + " KB, ready to upload";
+    } else {
+      drop.classList.remove("filled");
+      $("drop-title").textContent = "Choose a file or drop it here";
+      $("drop-meta").textContent = "Exported from a browser where you are logged in";
+    }
     $("upload-btn").disabled = !f;
     hide($("upload-msg"));
   }
@@ -288,44 +665,45 @@
     if (f) choose(f);
   });
 
+  // ── Upload ───────────────────────────────────────────────────────────
   $("upload-btn").addEventListener("click", function () {
     if (!picked) return;
-    var btn = $("upload-btn");
     var msg = $("upload-msg");
     var fd = new FormData();
     fd.append("file", picked);
 
-    btn.disabled = true;
-    btn.textContent = "Uploading...";
+    busy($("upload-btn"), "Uploading");
     hide(msg);
 
     // No Content-Type header here: the browser must set the multipart boundary.
     api("/admin/cookies", { method: "POST", body: fd })
       .then(function (res) {
         if (res.ok && res.body.success) {
-          show(msg, "Saved " + (res.body.fileSize || "") + ". Now run the test below to confirm Instagram actually works.", "ok");
+          show(msg, "Saved",
+            "The cookie file is in place" + (res.body.fileSize ? " (" + res.body.fileSize + ")" : "") +
+            ". Run the test below to confirm Instagram really works.", "ok");
           choose(null);
           fileInput.value = "";
           return refreshStatus();
         }
-        show(msg, res.body.error || ("Upload failed (" + res.status + ")"), "err");
+        show(msg, "Upload failed", res.body.error || ("The server returned " + res.status + "."), "err");
       })
-      .catch(function (e) { show(msg, "Upload failed: " + e.message, "err"); })
-      .then(function () {
-        btn.disabled = !picked;
-        btn.textContent = "Upload";
-      });
+      .catch(function (e) { show(msg, "Upload failed", e.message, "err"); })
+      .then(function () { idle($("upload-btn"), "Upload", !picked); });
   });
 
+  // ── Test ─────────────────────────────────────────────────────────────
   $("test-btn").addEventListener("click", function () {
     var url = $("test-url").value.trim();
-    var btn = $("test-btn");
     var msg = $("test-msg");
-    if (!url) { show(msg, "Paste an Instagram URL first.", "warn"); return; }
+    if (!url) {
+      show(msg, null, "Paste an Instagram link first.", "warn");
+      $("test-url").focus();
+      return;
+    }
 
-    btn.disabled = true;
-    btn.textContent = "Testing...";
-    show(msg, "Running a real extraction — this can take up to 30 seconds...", "warn");
+    busy($("test-btn"), "Testing");
+    show(msg, "Running", "Downloading through the real pipeline. This can take up to 30 seconds.", "warn");
 
     api("/admin/test", {
       method: "POST",
@@ -335,23 +713,21 @@
       .then(function (res) {
         var b = res.body || {};
         if (b.success) {
-          show(msg,
-            "Working.\n" +
-            (b.title ? "Title: " + b.title + "\n" : "") +
-            (b.author ? "Author: " + b.author + "\n" : "") +
-            b.formats + " format(s), " + b.downloadable + " directly downloadable.",
-            "ok");
+          var lines = [];
+          if (b.title) lines.push("Title: " + b.title);
+          if (b.author) lines.push("Author: " + b.author);
+          lines.push(b.formats + " formats found, " + b.downloadable + " ready to download.");
+          show(msg, "Instagram works", lines.join("\n"), "ok");
         } else {
-          show(msg, (b.error || "Test failed") + (b.details ? "\n\n" + b.details : ""), "err");
+          show(msg, "Instagram did not work",
+            (b.error || "The test failed.") + (b.details ? "\n\n" + b.details : ""), "err");
         }
       })
-      .catch(function (e) { show(msg, "Test failed: " + e.message, "err"); })
-      .then(function () {
-        btn.disabled = false;
-        btn.textContent = "Test";
-      });
+      .catch(function (e) { show(msg, "Test failed", e.message, "err"); })
+      .then(function () { idle($("test-btn"), "Run test"); });
   });
 
+  // Resume a session that survived a reload.
   var saved = recall();
   if (saved) {
     enter(saved).catch(function () { $("pw").focus(); });
