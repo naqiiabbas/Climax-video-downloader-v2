@@ -58,6 +58,7 @@ Verified: no key → `401`, wrong key → `403`, bearer accepted → passes thro
 | 12 | POST | `/api/update-cookies` | ✅ Working | Admin only |
 | 12b | GET | `/api/status` | ✅ Working | Files on disk, sizes, deletion times. Admin/ops |
 | 12c | DELETE | `/api/clear-server` | ✅ Working | Deletes every converted file now. **DELETE only** — GET/POST 404. Admin/ops |
+| 12d | GET | `/admin` | ✅ Working | Browser page to upload Instagram cookies. Own password (`ADMIN_PASSWORD`), not the API key. Operator tool — keep out of the app |
 | 13 | GET | `/api/history/status` | ✅ Working, unused | Endpoints built but dormant — see below |
 | 14 | GET | `/api/history` | 💤 Dormant | Not pursued — no login in the app |
 | 15 | POST | `/api/history` | 💤 Dormant | Not pursued — no login in the app |

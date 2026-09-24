@@ -20,6 +20,19 @@ export const config = {
   // Shared secret the mobile app sends as the `x-api-key` header.
   apiKey: process.env.API_KEY || "",
 
+  // Password for the /admin cookie-upload page.
+  //
+  // Deliberately NOT the API key. That key ships inside the mobile binary and
+  // is extractable by anyone who unpacks the app; reusing it here would let
+  // them replace cookies.txt — the credential yt-dlp presents on every
+  // login-gated request — with a jar of their choosing. Uploading a cookie
+  // file is a far more sensitive action than requesting a download, so it gets
+  // its own secret.
+  //
+  // Empty disables /admin entirely: the page still loads and explains that it
+  // is unconfigured, but every action returns 503.
+  adminPassword: process.env.ADMIN_PASSWORD || "",
+
   // Public origin used to build download URLs (e.g. https://api.example.com/downloader).
   // Falls back to the incoming request host when empty.
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, ""),

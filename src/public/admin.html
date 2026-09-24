@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Cookie Admin — Video Downloader API</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --fg: #15181d; --muted: #667085;
+    --line: #e3e6ea; --accent: #2563eb; --accent-fg: #fff;
+    --ok-bg: #e8f6ee; --ok-fg: #0f6b3d; --ok-line: #a8dcbf;
+    --warn-bg: #fdf3e2; --warn-fg: #8a5a08; --warn-line: #f0d2a0;
+    --err-bg: #fdeceb; --err-fg: #9b2220; --err-line: #f2b8b5;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --card: #1c1f25; --fg: #e8eaed; --muted: #98a2b3;
+      --line: #2c3139; --accent: #3b82f6;
+      --ok-bg: #12301f; --ok-fg: #86e0ae; --ok-line: #24623e;
+      --warn-bg: #33270f; --warn-fg: #f2c879; --warn-line: #6b5216;
+      --err-bg: #331917; --err-fg: #f5a6a2; --err-line: #6d2a26;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px;
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 620px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px; margin-bottom: 16px;
+  }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em;
+       color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  input[type=password], input[type=text] {
+    width: 100%; padding: 10px 12px; font: inherit;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--fg);
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button {
+    font: inherit; font-weight: 600; padding: 10px 16px; cursor: pointer;
+    border: 1px solid transparent; border-radius: 8px;
+    background: var(--accent); color: var(--accent-fg);
+  }
+  button.ghost { background: transparent; color: var(--muted); border-color: var(--line); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 180px; }
+  .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+  .msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+         font-size: 13px; border: 1px solid; white-space: pre-wrap;
+         word-break: break-word; }
+  .msg.ok   { background: var(--ok-bg);   color: var(--ok-fg);   border-color: var(--ok-line); }
+  .msg.warn { background: var(--warn-bg); color: var(--warn-fg); border-color: var(--warn-line); }
+  .msg.err  { background: var(--err-bg);  color: var(--err-fg);  border-color: var(--err-line); }
+  .pill { display: inline-block; padding: 3px 9px; border-radius: 99px;
+          font-size: 12px; font-weight: 700; border: 1px solid; }
+  .pill.ok  { background: var(--ok-bg);  color: var(--ok-fg);  border-color: var(--ok-line); }
+  .pill.err { background: var(--err-bg); color: var(--err-fg); border-color: var(--err-line); }
+  .drop {
+    border: 2px dashed var(--line); border-radius: var(--radius);
+    padding: 26px 16px; text-align: center; color: var(--muted);
+    cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--bg); }
+  .drop strong { color: var(--fg); display: block; margin-bottom: 4px; }
+  .steps { margin: 8px 0 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
+  .steps li { margin-bottom: 5px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+         background: var(--bg); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); }
+  .head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Cookie Admin</h1>
+  <p class="sub">Upload a <code>cookies.txt</code> so Instagram downloads work.</p>
+
+  <!-- Login -->
+  <section id="login" class="card">
+    <h2>Sign in</h2>
+    <form id="login-form">
+      <label for="pw">Admin password</label>
+      <div class="row">
+        <input class="grow" type="password" id="pw" autocomplete="current-password"
+               placeholder="ADMIN_PASSWORD" required>
+        <button type="submit" id="login-btn">Sign in</button>
+      </div>
+    </form>
+    <div id="login-msg" class="msg err" hidden></div>
+  </section>
+
+  <!-- Dashboard -->
+  <div id="dash" hidden>
+    <section class="card">
+      <div class="head">
+        <h2 style="margin:0">Current status</h2>
+        <button class="ghost" id="signout" type="button">Sign out</button>
+      </div>
+      <p style="margin:14px 0 0">
+        Cookie jar: <span id="cookie-pill" class="pill">checking…</span>
+      </p>
+      <p class="note" id="cookie-detail"></p>
+    </section>
+
+    <section class="card">
+      <h2>Upload cookies.txt</h2>
+      <div class="drop" id="drop" tabindex="0" role="button"
+           aria-label="Choose or drop a cookies.txt file">
+        <strong>Choose a file or drop it here</strong>
+        Netscape format, .txt, up to 5 MB
+      </div>
+      <input type="file" id="file" accept=".txt,text/plain" hidden>
+      <div class="row" style="margin-top:12px">
+        <button id="upload-btn" type="button" disabled>Upload</button>
+        <span class="note" id="file-name" style="margin:0"></span>
+      </div>
+      <div id="upload-msg" class="msg" hidden></div>
+
+      <p class="note"><strong>How to export one:</strong></p>
+      <ol class="steps">
+        <li>Log in to Instagram in a browser.</li>
+        <li>Install a “Get cookies.txt” extension (Chrome or Firefox).</li>
+        <li>Export for <code>instagram.com</code> — the file must start with
+            <code># Netscape HTTP Cookie File</code>.</li>
+        <li>Upload it here. Cookies expire after a few weeks, so repeat this
+            when Instagram stops working.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>Test Instagram</h2>
+      <p class="note" style="margin:0 0 10px">
+        Runs a real extraction through the same path the mobile app uses. A jar
+        can be valid Netscape format and still be logged out, so “uploaded”
+        does not mean “working”.
+      </p>
+      <label for="test-url">Instagram post or reel URL</label>
+      <div class="row">
+        <input class="grow" type="text" id="test-url"
+               placeholder="https://www.instagram.com/p/...">
+        <button id="test-btn" type="button">Test</button>
+      </div>
+      <div id="test-msg" class="msg" hidden></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var pw = "";
+  var picked = null;
+
+  // sessionStorage, not localStorage: scoped to this tab and dropped when the
+  // tab closes, so the password does not outlive the sitting. Wrapped because
+  // private-mode browsers throw on access rather than returning null.
+  function remember(v) { try { sessionStorage.setItem("vd_admin_pw", v); } catch (e) {} }
+  function recall() { try { return sessionStorage.getItem("vd_admin_pw") || ""; } catch (e) { return ""; } }
+  function forget() { try { sessionStorage.removeItem("vd_admin_pw"); } catch (e) {} }
+
+  function show(el, text, kind) {
+    el.textContent = text;
+    el.className = "msg " + (kind || "");
+    el.hidden = false;
+  }
+  function hide(el) { el.hidden = true; }
+
+  // Absolute paths on purpose: the page is reachable as both /admin and
+  // /admin/, and a relative "admin/status" would resolve to
+  // /admin/admin/status under the trailing-slash form.
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ "x-admin-password": pw }, opts.headers || {});
+    return fetch(path, opts).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        return { ok: r.ok, status: r.status, body: body };
+      });
+    });
+  }
+
+  function enter(password) {
+    pw = password;
+    return api("/admin/status").then(function (res) {
+      if (!res.ok) {
+        pw = "";
+        forget();
+        throw res;
+      }
+      remember(password);
+      $("login").hidden = true;
+      $("dash").hidden = false;
+      paintStatus(res.body);
+      return res;
+    });
+  }
+
+  $("login-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var btn = $("login-btn");
+    var msg = $("login-msg");
+    hide(msg);
+    btn.disabled = true;
+    btn.textContent = "Checking...";
+    enter($("pw").value)
+      .catch(function (res) {
+        var b = (res && res.body) || {};
+        var text = b.error || "Could not sign in";
+        if (b.attempts_remaining != null) {
+          text += " — " + b.attempts_remaining + " attempt(s) left before a 15-minute lockout.";
+        }
+        show(msg, text, "err");
+      })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = "Sign in";
+      });
+  });
+
+  $("signout").addEventListener("click", function () {
+    pw = "";
+    forget();
+    $("dash").hidden = true;
+    $("login").hidden = false;
+    $("pw").value = "";
+    $("pw").focus();
+  });
+
+  var REASONS = {
+    ok: "A usable cookie jar is in place. Instagram should work.",
+    missing: "No cookies.txt on the server yet. Upload one below.",
+    empty: "cookies.txt exists but is empty. That is the normal state after a fresh deploy — the file is created for the Docker bind mount. Upload a real export.",
+    "no-entries": "The file has the Netscape header but no cookie lines in it.",
+    "not-netscape-format": "Not a Netscape-format export. Use a “Get cookies.txt” extension rather than saving the page.",
+    "not-a-file": "The cookies.txt path is a directory, not a file. Check the bind mount.",
+    unreadable: "The server cannot read cookies.txt. Check its file permissions."
+  };
+
+  function paintStatus(body) {
+    var c = (body && body.cookies) || {};
+    var pill = $("cookie-pill");
+    pill.textContent = c.usable ? "working" : "not set up";
+    pill.className = "pill " + (c.usable ? "ok" : "err");
+    $("cookie-detail").textContent = REASONS[c.reason] || ("State: " + (c.reason || "unknown"));
+  }
+
+  function refreshStatus() {
+    return api("/admin/status").then(function (res) {
+      if (res.ok) paintStatus(res.body);
+    });
+  }
+
+  var drop = $("drop");
+  var fileInput = $("file");
+
+  function choose(f) {
+    picked = f;
+    $("file-name").textContent = f ? f.name + " (" + Math.ceil(f.size / 1024) + " KB)" : "";
+    $("upload-btn").disabled = !f;
+    hide($("upload-msg"));
+  }
+
+  drop.addEventListener("click", function () { fileInput.click(); });
+  drop.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+  });
+  fileInput.addEventListener("change", function () { choose(fileInput.files[0] || null); });
+
+  ["dragenter", "dragover"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("over"); });
+  });
+  drop.addEventListener("drop", function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) choose(f);
+  });
+
+  $("upload-btn").addEventListener("click", function () {
+    if (!picked) return;
+    var btn = $("upload-btn");
+    var msg = $("upload-msg");
+    var fd = new FormData();
+    fd.append("file", picked);
+
+    btn.disabled = true;
+    btn.textContent = "Uploading...";
+    hide(msg);
+
+    // No Content-Type header here: the browser must set the multipart boundary.
+    api("/admin/cookies", { method: "POST", body: fd })
+      .then(function (res) {
+        if (res.ok && res.body.success) {
+          show(msg, "Saved " + (res.body.fileSize || "") + ". Now run the test below to confirm Instagram actually works.", "ok");
+          choose(null);
+          fileInput.value = "";
+          return refreshStatus();
+        }
+        show(msg, res.body.error || ("Upload failed (" + res.status + ")"), "err");
+      })
+      .catch(function (e) { show(msg, "Upload failed: " + e.message, "err"); })
+      .then(function () {
+        btn.disabled = !picked;
+        btn.textContent = "Upload";
+      });
+  });
+
+  $("test-btn").addEventListener("click", function () {
+    var url = $("test-url").value.trim();
+    var btn = $("test-btn");
+    var msg = $("test-msg");
+    if (!url) { show(msg, "Paste an Instagram URL first.", "warn"); return; }
+
+    btn.disabled = true;
+    btn.textContent = "Testing...";
+    show(msg, "Running a real extraction — this can take up to 30 seconds...", "warn");
+
+    api("/admin/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: url })
+    })
+      .then(function (res) {
+        var b = res.body || {};
+        if (b.success) {
+          show(msg,
+            "Working.\n" +
+            (b.title ? "Title: " + b.title + "\n" : "") +
+            (b.author ? "Author: " + b.author + "\n" : "") +
+            b.formats + " format(s), " + b.downloadable + " directly downloadable.",
+            "ok");
+        } else {
+          show(msg, (b.error || "Test failed") + (b.details ? "\n\n" + b.details : ""), "err");
+        }
+      })
+      .catch(function (e) { show(msg, "Test failed: " + e.message, "err"); })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = "Test";
+      });
+  });
+
+  var saved = recall();
+  if (saved) {
+    enter(saved).catch(function () { $("pw").focus(); });
+  } else {
+    $("pw").focus();
+  }
+})();
+</script>
+</body>
+</html>

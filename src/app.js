@@ -10,6 +10,7 @@ import DalyMotionRoutes from "./routes/DalyMotion.route.js";
 import DownloadsRoutes from "./routes/downloads.routes.js";
 import SystemRoutes from "./routes/system.routes.js";
 import HistoryRoutes from "./routes/history.routes.js";
+import AdminRoutes from "./routes/admin.routes.js";
 import { verifyStrongKey } from "./middleware/apiAuth.js";
 
 export function createApp() {
@@ -25,6 +26,11 @@ export function createApp() {
   // Converted mp4 files. Served without a key so the mobile client can fetch
   // the file_url it was handed; keys are unguessable timestamps and expire.
   app.use("/downloads", express.static(config.downloadsDir, { maxAge: "1h" }));
+
+  // Browser page for uploading cookies.txt, which is what Instagram needs.
+  // Gated by ADMIN_PASSWORD, deliberately NOT by the mobile API key — see
+  // config.adminPassword. Mounted before the JSON routes so /admin is a page.
+  app.use("/admin", AdminRoutes);
 
   app.get("/", (_req, res) => {
     res.json({ service: "video-downloader-api", status: "running" });

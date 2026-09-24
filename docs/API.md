@@ -384,6 +384,7 @@ as the VPS one.
 |---|---|---|
 | GET | `/api/health` | **Open.** `{status, uptime, cookies, cookies_detail, cachedVideos, timestamp}` |
 | GET | `/api/status` | **Requires `x-api-key`.** Converted files on disk, their size and deletion times |
+| GET | `/admin` | Browser page for uploading cookies.txt. Gated by `ADMIN_PASSWORD`, **not** the API key |
 | DELETE | `/api/clear-server` | **Requires `x-api-key`. DELETE, not GET.** Removes every converted file immediately |
 | POST | `/api/update-cookies` | Multipart, field `file`. Max 5 MB, `.txt` + `text/plain`, must be Netscape format |
 | GET | `/api/delete-video?url=<file_url>` | Deletes a converted file before its TTL |
@@ -538,3 +539,77 @@ Notes:
   truncated transfer. Nothing is unrecoverable — every file is regenerable by
   re-requesting it.
 - Pair it with `/api/status` to see what will go before you call it.
+
+## Admin page
+
+```
+GET https://your-domain/admin
+```
+
+A small browser page for the one operational job that cannot be done from the
+mobile app: uploading the `cookies.txt` that Instagram requires. It shows
+whether the current jar is usable, takes a new one by file picker or drag and
+drop, and runs a real extraction to prove it works.
+
+### Why a separate password
+
+`ADMIN_PASSWORD`, never `API_KEY`. The API key ships inside the mobile binary
+and is extractable by anyone who unpacks the app. Uploading a cookie jar is a
+much more sensitive action than requesting a download — the jar is the
+credential yt-dlp presents on every login-gated request — so it gets its own
+secret.
+
+Generate one with `openssl rand -base64 24`. If `ADMIN_PASSWORD` is empty the
+page still loads and says so, but every action returns **503**; an unset
+password never means "no password required".
+
+### Endpoints behind it
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/admin` | The page. Public — it is a login form and holds no secrets |
+| GET | `/admin/status` | Cookie jar state. Doubles as the login check |
+| POST | `/admin/cookies` | Upload a jar (multipart, field `file`) |
+| POST | `/admin/test` | Run a real Instagram extraction |
+
+All three actions take the password as an `x-admin-password` header.
+`/admin/cookies` reuses the exact handler behind `POST /api/update-cookies`,
+so the Netscape validation and the `0600` write cannot drift between the two
+entry points — only the gate in front differs.
+
+### Brute-force lockout
+
+Five wrong passwords from one IP triggers a **15-minute lockout** (`429`,
+`error_code: "locked_out"`, with `Retry-After`). The correct password is
+refused during a lockout too — a lockout you can step around by guessing right
+is decoration. Counts are per-IP, so one attacker cannot lock out everyone, and
+they live in process memory, so a restart clears them.
+
+This is the only rate limiting in the service. It exists here and nowhere else
+because this secret is short enough for a human to type, and therefore short
+enough to guess.
+
+### Test before trusting
+
+`POST /admin/test` calls this server's own `/api/instagram` over loopback with
+the real API key, so it exercises the exact path the mobile app takes rather
+than approximating it.
+
+This matters more than it looks. A cookie jar can pass every format check —
+`/admin/status` will report `usable: true` — and still be logged out.
+Uploading and being told "saved" is not evidence that Instagram works. The test
+surfaces yt-dlp's own stderr, which is where the real answer is:
+
+```
+ERROR: [Instagram] ...: Instagram sent an empty media response. Check if this
+post is accessible in your browser without being logged-in...
+```
+
+### Operational notes
+
+- Instagram cookies expire after a few weeks. When Instagram downloads start
+  failing, re-export and re-upload; nothing else needs to change.
+- The page sends `noindex, nofollow` and keeps the password in
+  `sessionStorage` — scoped to the tab, dropped when it closes. There is a
+  Sign out button that clears it immediately.
+- Do not expose this page in the mobile app. It is an operator tool.
